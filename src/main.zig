@@ -3,6 +3,8 @@ const glfw = @import("zglfw");
 const wgpu = @import("wgpu");
 const zm = @import("zmath");
 
+const wgfx = @import("wgfx.zig");
+
 const PlainUniforms = extern struct {
     worldViewProj: [4][4]f32 = zm.identity(),
 };
@@ -28,11 +30,8 @@ pub fn main() !void {
             @panic("Memory leaks detected!");
     }
 
-    wgpu.setLogCallback(logCallback, null);
-    wgpu.setLogLevel(.warn);
-
-    const instance = wgpu.Instance.create(null).?;
-    defer instance.release();
+    var device = wgfx.Device.create(alloc);
+    defer device.deinit();
 
     try glfw.init();
     defer glfw.terminate();
@@ -42,39 +41,15 @@ pub fn main() !void {
     const window = try glfw.Window.create(600, 600, windowName, null);
     defer window.destroy();
 
-    const chained = getSurfaceChain(window);
-    const surface = instance.createSurface(&wgpu.SurfaceDescriptor{
-        .next_in_chain = &chained.chain,
-        .label = windowName,
-    }).?;
-    defer surface.release();
+    var surface = wgfx.Surface.create(&device, window, windowName);
+    defer surface.deinit();
 
-    const adapter = instance.requestAdapterSync(&wgpu.RequestAdapterOptions{
-        .compatible_surface = surface,
-        .power_preference = .high_performance,
-    }).adapter.?;
-    defer adapter.release();
+    device.init(&surface);
 
-    var adapterInfo: wgpu.AdapterInfo = undefined;
-    adapter.getInfo(&adapterInfo);
-    defer adapterInfo.freeMembers();
-    std.debug.print("Adapter: {s}, type: {?s}, backend: {?s}\n", .{ adapterInfo.device, std.enums.tagName(wgpu.AdapterType, adapterInfo.adapter_type), std.enums.tagName(wgpu.BackendType, adapterInfo.backend_type) });
-
-    const surfaceFormat = getSurfaceFormat(surface, adapter).?;
-    std.debug.print("Surface format: {?s}\n", .{std.enums.tagName(wgpu.TextureFormat, surfaceFormat)});
-
-    const device = adapter.requestDeviceSync(&wgpu.DeviceDescriptor{
-        .required_limits = null,
-    }).device.?;
-    defer device.release();
-
-    const queue = device.getQueue().?;
-    defer queue.release();
-
-    const plainShader = try createShaderModule(device, "data/plain.wgsl", alloc);
+    const plainShader = try createShaderModule(device.device.?, "data/plain.wgsl", alloc);
     defer plainShader.release();
 
-    const plainBindGroupLayout = device.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+    const plainBindGroupLayout = device.device.?.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
         .label = "Plain",
         .entry_count = 3,
         .entries = &[_]wgpu.BindGroupLayoutEntry{
@@ -112,7 +87,7 @@ pub fn main() !void {
     }).?;
     defer plainBindGroupLayout.release();
 
-    const plainPipelineLayout = device.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
+    const plainPipelineLayout = device.device.?.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
         .label = "Plain",
         .bind_group_layout_count = 1,
         .bind_group_layouts = &[_]*wgpu.BindGroupLayout{
@@ -121,7 +96,7 @@ pub fn main() !void {
     }).?;
     defer plainPipelineLayout.release();
 
-    const plainPipeline = device.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
+    const plainPipeline = device.device.?.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
         .label = "plain",
         .layout = plainPipelineLayout,
         .vertex = .{
@@ -148,31 +123,31 @@ pub fn main() !void {
             .target_count = 1,
             .targets = &[_]wgpu.ColorTargetState{
                 .{
-                    .format = surfaceFormat,
+                    .format = surface.format,
                 },
             },
         },
     }).?;
     defer plainPipeline.release();
 
-    const plainVerticesBuffer = device.createBuffer(&wgpu.BufferDescriptor{
+    const plainVerticesBuffer = device.device.?.createBuffer(&wgpu.BufferDescriptor{
         .label = "PlainVertices",
         .usage = wgpu.BufferUsage.vertex | wgpu.BufferUsage.copy_dst,
         .size = std.mem.sliceAsBytes(&PlainVertices).len,
     }).?;
     defer plainVerticesBuffer.release();
-    queue.writeBuffer(plainVerticesBuffer, 0, (&PlainVertices).ptr, std.mem.sliceAsBytes(&PlainVertices).len);
+    device.queue.?.writeBuffer(plainVerticesBuffer, 0, (&PlainVertices).ptr, std.mem.sliceAsBytes(&PlainVertices).len);
 
     var plainUniforms = PlainUniforms{};
-    const plainUniformsBuffer = device.createBuffer(&wgpu.BufferDescriptor{
+    const plainUniformsBuffer = device.device.?.createBuffer(&wgpu.BufferDescriptor{
         .label = "PlainUniforms",
         .usage = wgpu.BufferUsage.uniform | wgpu.BufferUsage.copy_dst,
         .size = @sizeOf(PlainUniforms),
     }).?;
     defer plainUniformsBuffer.release();
-    queue.writeBuffer(plainUniformsBuffer, 0, &plainUniforms, @sizeOf(PlainUniforms));
+    device.queue.?.writeBuffer(plainUniformsBuffer, 0, &plainUniforms, @sizeOf(PlainUniforms));
 
-    const linearRepeatSampler = device.createSampler(&wgpu.SamplerDescriptor{
+    const linearRepeatSampler = device.device.?.createSampler(&wgpu.SamplerDescriptor{
         .label = "LinearRepeat",
         .address_mode_u = .repeat,
         .address_mode_v = .repeat,
@@ -183,7 +158,7 @@ pub fn main() !void {
     }).?;
     defer linearRepeatSampler.release();
 
-    const plainTexture = device.createTexture(&wgpu.TextureDescriptor{
+    const plainTexture = device.device.?.createTexture(&wgpu.TextureDescriptor{
         .label = "Texture",
         .usage = wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst,
         .format = .rgba8_unorm,
@@ -199,12 +174,12 @@ pub fn main() !void {
             texData[y * 4 + x] = @splat(@truncate(255 * ((x + y) % 2)));
         }
     }
-    queue.writeTexture(&wgpu.ImageCopyTexture{
+    device.queue.?.writeTexture(&wgpu.ImageCopyTexture{
         .texture = plainTexture,
         .origin = .{},
     }, &texData[0], std.mem.sliceAsBytes(&texData).len, &wgpu.TextureDataLayout{ .bytes_per_row = 4 * @sizeOf(std.meta.Elem(@TypeOf(texData))) }, &wgpu.Extent3D{ .width = 4, .height = 4, .depth_or_array_layers = 1 });
 
-    const plainBindGroup = device.createBindGroup(&wgpu.BindGroupDescriptor{
+    const plainBindGroup = device.device.?.createBindGroup(&wgpu.BindGroupDescriptor{
         .label = "Plain",
         .layout = plainBindGroupLayout,
         .entry_count = 3,
@@ -225,29 +200,11 @@ pub fn main() !void {
     }).?;
     defer plainBindGroup.release();
 
-    var surfConfigured = false;
     const timeStart = std.time.microTimestamp();
     var frames: i64 = 0;
     while (!window.shouldClose()) {
-        var surfaceTex: wgpu.SurfaceTexture = undefined;
-        if (surfConfigured) {
-            surface.getCurrentTexture(&surfaceTex);
-        } else {
-            surfaceTex.status = .outdated;
-        }
-        if (surfaceTex.suboptimal != 0 or surfaceTex.status == .outdated or surfaceTex.status == .lost) {
-            const width, const height = window.getSize();
-            surface.configure(&wgpu.SurfaceConfiguration{
-                .device = device,
-                .format = surfaceFormat,
-                .width = @intCast(width),
-                .height = @intCast(height),
-                .present_mode = .immediate,
-            });
-            surfConfigured = true;
-        } else if (surfaceTex.status != .success) {
-            break;
-        } else {
+        const surfTexViewOrError= surface.acquireTexture();
+        if (surfTexViewOrError) |surfTexView| {
             {
                 const timeNow = std.time.microTimestamp();
                 const rot = zm.matFromAxisAngle(.{ 0, 0, 1, 0 }, @floatCast(@as(f64, @floatFromInt(timeNow - timeStart)) / 1e6));
@@ -255,13 +212,10 @@ pub fn main() !void {
                 const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
                 const ortho = zm.orthographicOffCenterLh(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
                 plainUniforms.worldViewProj = zm.mul(rot, ortho);
-                queue.writeBuffer(plainUniformsBuffer, 0, &plainUniforms, @sizeOf(PlainUniforms));
+                device.queue.?.writeBuffer(plainUniformsBuffer, 0, &plainUniforms, @sizeOf(PlainUniforms));
             }
 
-            const surfTexView = surfaceTex.texture.createView(null).?;
-            defer surfTexView.release();
-
-            const encoder = device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{ .label = "Commands" }).?;
+            const encoder = device.device.?.createCommandEncoder(&wgpu.CommandEncoderDescriptor{ .label = "Commands" }).?;
 
             const renderPass = encoder.beginRenderPass(&wgpu.RenderPassDescriptor{
                 .label = "main",
@@ -287,53 +241,26 @@ pub fn main() !void {
             const commands = encoder.finish(&wgpu.CommandBufferDescriptor{ .label = "main" }).?;
             encoder.release();
 
-            queue.submit(&[_]*wgpu.CommandBuffer{commands});
+            device.queue.?.submit(&[_]*wgpu.CommandBuffer{commands});
             commands.release();
 
             surface.present();
             frames += 1;
+        } else |err| switch (err) {
+            wgfx.AcquireTextureError.SurfaceNeedsConfigure => {
+                const width, const height = window.getSize();
+                surface.configure(&device, .{@intCast(width), @intCast(height)}, wgpu.PresentMode.immediate);
+            },
+            wgfx.AcquireTextureError.SurfaceLost => break,
         }
 
-        _ = device.poll(false, null);
+        _ = device.device.?.poll(false, null);
         glfw.pollEvents();
     }
 
     const timeNow = std.time.microTimestamp();
     const durationSecs: f64 = @as(f64, @floatFromInt(timeNow - timeStart)) / 1e6;
     std.debug.print("Frames: {d}, seconds: {d:.3}, FPS: {d:.3}\n", .{ frames, durationSecs, @as(f64, @floatFromInt(frames)) / durationSecs });
-}
-
-fn logCallback(level: wgpu.LogLevel, message: ?[*:0]const u8, userdata: ?*anyopaque) callconv(.C) void {
-    _ = userdata;
-    std.debug.print("Wgpu {?s}: {?s}\n", .{ std.enums.tagName(wgpu.LogLevel, level), message });
-}
-
-const builtin = @import("builtin");
-const getSurfaceChain = switch (builtin.target.os.tag) {
-    .windows => getSurfaceChainWin32,
-    .linux => getSurfaceChainX11,
-    else => unreachable,
-};
-
-fn getSurfaceChainX11(window: *glfw.Window) wgpu.SurfaceDescriptorFromXlibWindow {
-    return wgpu.SurfaceDescriptorFromXlibWindow{
-        .display = glfw.getX11Display().?,
-        .window = glfw.getX11Window(window),
-    };
-}
-
-fn getSurfaceChainWin32(window: *glfw.Window) wgpu.SurfaceDescriptorFromWindowsHWND {
-    return wgpu.SurfaceDescriptorFromWindowsHWND{
-        .hinstance = std.os.windows.kernel32.GetModuleHandleW(null).?,
-        .hwnd = glfw.getWin32Window(window).?,
-    };
-}
-
-fn getSurfaceFormat(surface: *wgpu.Surface, adapter: *wgpu.Adapter) ?wgpu.TextureFormat {
-    var surfaceCaps: wgpu.SurfaceCapabilities = undefined;
-    surface.getCapabilities(adapter, &surfaceCaps);
-    defer surfaceCaps.FreeMembers();
-    return if (surfaceCaps.format_count > 0) surfaceCaps.formats[0] else null;
 }
 
 fn createShaderModule(device: *wgpu.Device, filename: [*:0]const u8, alloc: std.mem.Allocator) !*wgpu.ShaderModule {
