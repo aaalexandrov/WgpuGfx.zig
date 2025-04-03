@@ -51,7 +51,7 @@ pub const Surface = struct {
         self.configured = true;
     }
 
-    pub fn acquireTexture(self: *Self) !*wgpu.TextureView {
+    pub fn acquireTexture(self: *Self) AcquireTextureError!*wgpu.TextureView {
         std.debug.assert(self.surfaceView == null);
         if (!self.configured)
             return AcquireTextureError.SurfaceNeedsConfigure;
@@ -100,6 +100,6 @@ fn getSurfaceChainWin32(window: *glfw.Window) wgpu.SurfaceDescriptorFromWindowsH
 pub fn getSurfaceFormat(surface: *wgpu.Surface, adapter: *wgpu.Adapter) ?wgpu.TextureFormat {
     var surfaceCaps: wgpu.SurfaceCapabilities = undefined;
     surface.getCapabilities(adapter, &surfaceCaps);
-    defer surfaceCaps.FreeMembers();
+    defer surfaceCaps.freeMembers();
     return if (surfaceCaps.format_count > 0) surfaceCaps.formats[0] else null;
 }

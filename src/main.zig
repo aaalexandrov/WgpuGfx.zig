@@ -46,89 +46,16 @@ pub fn main() !void {
 
     device.init(&surface);
 
-    const plainShader = try createShaderModule(device.device.?, "data/plain.wgsl", alloc);
-    defer plainShader.release();
+    var plainShader = try wgfx.Shader.createRendering(
+        &device, 
+        "data/plain.wgsl", 
+        &[_]wgpu.VertexBufferLayout{ wgfx.getVertexBufferLayout(PlainVertexPosColorUv), }, 
+        &[_]wgpu.ColorTargetState{ .{ .format = surface.format, }, }
+    );
+    defer plainShader.deinit();
 
-    const plainBindGroupLayout = device.device.?.createBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
-        .label = "Plain",
-        .entry_count = 3,
-        .entries = &[_]wgpu.BindGroupLayoutEntry{
-            .{
-                .binding = 0,
-                .visibility = wgpu.ShaderStage.vertex | wgpu.ShaderStage.fragment,
-                .buffer = .{
-                    .type = .uniform,
-                },
-                .sampler = .{},
-                .storage_texture = .{},
-                .texture = .{},
-            },
-            .{
-                .binding = 1,
-                .visibility = wgpu.ShaderStage.vertex | wgpu.ShaderStage.fragment,
-                .buffer = .{},
-                .sampler = .{
-                    .type = .filtering,
-                },
-                .storage_texture = .{},
-                .texture = .{},
-            },
-            .{
-                .binding = 2,
-                .visibility = wgpu.ShaderStage.vertex | wgpu.ShaderStage.fragment,
-                .buffer = .{},
-                .sampler = .{},
-                .storage_texture = .{},
-                .texture = .{
-                    .sample_type = .float,
-                },
-            },
-        },
-    }).?;
+    const plainBindGroupLayout = plainShader.pipeline.render.getBindGroupLayout(0).?;
     defer plainBindGroupLayout.release();
-
-    const plainPipelineLayout = device.device.?.createPipelineLayout(&wgpu.PipelineLayoutDescriptor{
-        .label = "Plain",
-        .bind_group_layout_count = 1,
-        .bind_group_layouts = &[_]*wgpu.BindGroupLayout{
-            plainBindGroupLayout,
-        },
-    }).?;
-    defer plainPipelineLayout.release();
-
-    const plainPipeline = device.device.?.createRenderPipeline(&wgpu.RenderPipelineDescriptor{
-        .label = "plain",
-        .layout = plainPipelineLayout,
-        .vertex = .{
-            .module = plainShader,
-            .entry_point = "vs_main",
-            .buffer_count = 1,
-            .buffers = &[_]wgpu.VertexBufferLayout{
-                .{
-                    .array_stride = @sizeOf(PlainVertexPosColorUv),
-                    .attribute_count = 3,
-                    .attributes = &[_]wgpu.VertexAttribute{
-                        .{ .format = .float32x3, .offset = 0, .shader_location = 0 },
-                        .{ .format = .float32x3, .offset = 12, .shader_location = 1 },
-                        .{ .format = .float32x2, .offset = 24, .shader_location = 2 },
-                    },
-                },
-            },
-        },
-        .primitive = .{},
-        .multisample = .{},
-        .fragment = &wgpu.FragmentState{
-            .module = plainShader,
-            .entry_point = "fs_main",
-            .target_count = 1,
-            .targets = &[_]wgpu.ColorTargetState{
-                .{
-                    .format = surface.format,
-                },
-            },
-        },
-    }).?;
-    defer plainPipeline.release();
 
     const plainVerticesBuffer = device.device.?.createBuffer(&wgpu.BufferDescriptor{
         .label = "PlainVertices",
@@ -203,7 +130,7 @@ pub fn main() !void {
     const timeStart = std.time.microTimestamp();
     var frames: i64 = 0;
     while (!window.shouldClose()) {
-        const surfTexViewOrError= surface.acquireTexture();
+        const surfTexViewOrError = surface.acquireTexture();
         if (surfTexViewOrError) |surfTexView| {
             {
                 const timeNow = std.time.microTimestamp();
@@ -230,7 +157,7 @@ pub fn main() !void {
                 },
             }).?;
 
-            renderPass.setPipeline(plainPipeline);
+            renderPass.setPipeline(plainShader.pipeline.render);
             renderPass.setVertexBuffer(0, plainVerticesBuffer, 0, plainVerticesBuffer.getSize());
             renderPass.setBindGroup(0, plainBindGroup, 0, null);
             renderPass.draw(3, 1, 0, 0);
@@ -249,7 +176,7 @@ pub fn main() !void {
         } else |err| switch (err) {
             wgfx.AcquireTextureError.SurfaceNeedsConfigure => {
                 const width, const height = window.getSize();
-                surface.configure(&device, .{@intCast(width), @intCast(height)}, wgpu.PresentMode.immediate);
+                surface.configure(&device, .{ @intCast(width), @intCast(height) }, wgpu.PresentMode.immediate);
             },
             wgfx.AcquireTextureError.SurfaceLost => break,
         }
@@ -261,16 +188,4 @@ pub fn main() !void {
     const timeNow = std.time.microTimestamp();
     const durationSecs: f64 = @as(f64, @floatFromInt(timeNow - timeStart)) / 1e6;
     std.debug.print("Frames: {d}, seconds: {d:.3}, FPS: {d:.3}\n", .{ frames, durationSecs, @as(f64, @floatFromInt(frames)) / durationSecs });
-}
-
-fn createShaderModule(device: *wgpu.Device, filename: [*:0]const u8, alloc: std.mem.Allocator) !*wgpu.ShaderModule {
-    const file = try std.fs.cwd().openFileZ(filename, .{});
-    const content = try file.readToEndAllocOptions(alloc, 0xffffffff, null, @alignOf(u8), 0);
-    defer alloc.free(content);
-    return device.createShaderModule(&wgpu.ShaderModuleDescriptor{
-        .next_in_chain = @ptrCast(&wgpu.ShaderModuleWGSLDescriptor{
-            .code = content,
-        }),
-        .label = filename,
-    }).?;
 }
