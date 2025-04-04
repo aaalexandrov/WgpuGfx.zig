@@ -14,7 +14,7 @@ pub const Buffer = struct {
     pub fn createFromDesc(device: *Device, desc: *const wgpu.BufferDescriptor) Buffer {
         return .{
             .buffer = device.device.?.createBuffer(desc).?,
-            .name = getNameFromDescLabel(desc, device.alloc),
+            .name = devi.copyNameFromDescLabel(desc, device.alloc),
             .device = device,
         };
     }
@@ -57,7 +57,7 @@ pub const Sampler = struct {
     pub fn create(device: *Device, desc: *const wgpu.SamplerDescriptor) Sampler {
         return .{
             .sampler = device.device.?.createSampler(desc).?,
-            .name = getNameFromDescLabel(desc, device.alloc),
+            .name = devi.copyNameFromDescLabel(desc, device.alloc),
             .device = device,
         };
     }
@@ -80,8 +80,8 @@ pub const Texture = struct {
         const tex = device.device.?.createTexture(desc).?;
         return .{
             .texture = tex,
-            .view = tex.createView(null),
-            .name = getNameFromDescLabel(desc, device.alloc),
+            .view = tex.createView(null).?,
+            .name = devi.copyNameFromDescLabel(desc, device.alloc),
             .device = device,
         };
     }
@@ -106,28 +106,40 @@ pub const Texture = struct {
         };
     }
 
-    // pub fn writeLevel(self: *Self, level: u32, content: []const u8) void {
-    //     self.device.queue.?.writeTexture(&wgpu.ImageCopyTexture{
-    //         .texture = self.texture,
-    //         .mip_level = level,
-    //         .origin = .{},
-    //     }, content.ptr, content.len,
-    //     data_layout: *const TextureDataLayout, write_size: *const Extent3D);
-    // }
+    pub fn writeLevel(self: *Self, level: u32, content: []const u8) void {
+        const width = self.texture.getWidth();
+        const height = self.texture.getHeight();
+        const depth = self.texture.getDepthOrArrayLayers();
+        const format = self.texture.getFormat();
+        const formatSize = getTextureFormatSize(format);
+        const rowSize = width * formatSize;
+        std.debug.assert(rowSize * height * depth == content.len);
+        self.device.queue.?.writeTexture(
+            &wgpu.ImageCopyTexture{
+                .texture = self.texture,
+                .mip_level = level,
+                .origin = .{},
+            },
+            content.ptr,
+            content.len,
+            &wgpu.TextureDataLayout{
+                .bytes_per_row = rowSize,
+                .rows_per_image = height,
+            },
+            &wgpu.Extent3D{
+                .width = width,
+                .height = height,
+                .depth_or_array_layers = depth,
+            },
+        );
+    }
 };
 
 pub fn getTextureFormatSize(format: wgpu.TextureFormat) u32 {
-    switch (format) {
-        .bgra8_unorm, .bgra8_srgb, .rgba8_unorm, .rgba8_unorm_srgb, .rgba8_uint, .rgba8_sint => 4,
+    return switch (format) {
+        .bgra8_unorm, .bgra8_unorm_srgb, .rgba8_unorm, .rgba8_unorm_srgb, .rgba8_uint, .rgba8_sint => 4,
         .rg8_unorm, .rg8_snorm, .rg8_uint, .rg8_sint => 2,
         .r8_unorm, .r8_snorm, .r8_uint, .r8_sint => 1,
         else => unreachable,
-    }
-}
-
-pub fn getNameFromDescLabel(desc: anytype, alloc: std.mem.Allocator) [:0]const u8 {
-    return if (desc.label) |label| blk: {
-        const len = std.mem.len(label);
-        break :blk (alloc.dupeZ(u8, label[0..len]) catch unreachable)[0..len :0];
-    } else "";
+    };
 }

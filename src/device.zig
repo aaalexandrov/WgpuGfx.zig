@@ -63,6 +63,13 @@ pub fn releaseObj(ptr: anytype) void {
     }
 }
 
+pub fn copyNameFromDescLabel(desc: anytype, alloc: std.mem.Allocator) [:0]const u8 {
+    return if (desc.label) |label| blk: {
+        const len = std.mem.len(label);
+        break :blk (alloc.dupeZ(u8, label[0..len]) catch unreachable)[0..len :0];
+    } else "";
+}
+
 fn logCallback(level: wgpu.LogLevel, message: ?[*:0]const u8, userdata: ?*anyopaque) callconv(.C) void {
     _ = userdata;
     std.debug.print("Wgpu {?s}: {?s}\n", .{ std.enums.tagName(wgpu.LogLevel, level), message });

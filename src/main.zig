@@ -73,32 +73,28 @@ pub fn main() !void {
     });
     defer linearRepeatSampler.deinit();
 
-    const plainTexture = device.device.?.createTexture(&wgpu.TextureDescriptor{
-        .label = "Texture",
-        .usage = wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst,
-        .format = .rgba8_unorm,
-        .size = .{ .width = 4, .height = 4, .depth_or_array_layers = 1 },
-    }).?;
-    defer plainTexture.release();
-    const plainTextureView = plainTexture.createView(null).?;
-    defer plainTextureView.release();
-
     var texData: [4][4]@Vector(4, u8) = undefined;
     for (&texData, 0..) |*row, y| {
         for (row, 0..) |*e, x| {
             e.* = @splat(@truncate(255 * ((x + y) % 2)));
         }
     }
-    device.queue.?.writeTexture(&wgpu.ImageCopyTexture{
-        .texture = plainTexture,
-        .origin = .{},
-    }, &texData[0], std.mem.sliceAsBytes(&texData).len, &wgpu.TextureDataLayout{ .bytes_per_row = @sizeOf(std.meta.Elem(@TypeOf(texData))) }, &wgpu.Extent3D{ .width = texData[0].len, .height = texData.len, .depth_or_array_layers = 1 });
+    var plainTexture = wgfx.Texture.createFromDesc(&device, &wgpu.TextureDescriptor{
+        .label = "Texture",
+        .usage = wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst,
+        .format = .rgba8_unorm,
+        .size = .{ .width = 4, .height = 4, },
+    });
+    defer plainTexture.deinit();
+    plainTexture.writeLevel(0, std.mem.sliceAsBytes(&texData));
 
-    const plainBindGroup = plainShader.createBindGroup("Plain", 0, .{ plainUniformsBuffer.buffer, linearRepeatSampler.sampler, plainTextureView }).?;
+    const plainBindGroup = plainShader.createBindGroup("Plain", 0, .{ plainUniformsBuffer.buffer, linearRepeatSampler.sampler, plainTexture.view }).?;
     defer plainBindGroup.release();
 
-    const timeStart = std.time.microTimestamp();
+    var commands = wgfx.Commands.create(&device, "commands");
+    defer commands.deinit();
     var frames: i64 = 0;
+    const timeStart = std.time.microTimestamp();
     while (!window.shouldClose()) {
         const surfTexViewOrError = surface.acquireTexture();
         if (surfTexViewOrError) |surfTexView| {
@@ -112,12 +108,8 @@ pub fn main() !void {
                 plainUniformsBuffer.writePtr(0, &plainUniforms);
             }
 
-            const encoder = device.device.?.createCommandEncoder(&wgpu.CommandEncoderDescriptor{ .label = "Commands" }).?;
-
-            const renderPass = encoder.beginRenderPass(&wgpu.RenderPassDescriptor{
-                .label = "main",
-                .color_attachment_count = 1,
-                .color_attachments = &[_]wgpu.ColorAttachment{
+            commands.start();
+            const renderPass = commands.beginRenderPass("main", &[_]wgpu.ColorAttachment{
                     .{
                         .view = surfTexView,
                         .load_op = .clear,
@@ -125,7 +117,8 @@ pub fn main() !void {
                         .clear_value = wgpu.Color{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
                     },
                 },
-            }).?;
+                null
+            );
 
             renderPass.setPipeline(plainShader.pipeline.render);
             renderPass.setVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.getSize());
@@ -135,11 +128,7 @@ pub fn main() !void {
             renderPass.end();
             renderPass.release();
 
-            const commands = encoder.finish(&wgpu.CommandBufferDescriptor{ .label = "main" }).?;
-            encoder.release();
-
-            device.queue.?.submit(&[_]*wgpu.CommandBuffer{commands});
-            commands.release();
+            commands.submit();
 
             surface.present();
             frames += 1;
