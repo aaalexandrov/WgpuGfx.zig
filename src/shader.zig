@@ -22,7 +22,7 @@ pub const Shader = struct {
     module: *wgpu.ShaderModule,
     pipeline: ShaderPipeline,
     name: [:0]const u8,
-    alloc: std.mem.Allocator,
+    device: *Device,
 
     const Self = @This();
 
@@ -31,7 +31,7 @@ pub const Shader = struct {
             .module = module,
             .pipeline = pipeline,
             .name = device.alloc.dupeZ(u8, name) catch unreachable,
-            .alloc = device.alloc,
+            .device = device,
         };
     }
 
@@ -60,6 +60,21 @@ pub const Shader = struct {
         });
     }
 
+    pub fn createComputeFromDesc(device: *Device, desc: *const wgpu.ComputePipelineDescriptor) Shader {
+        return createFromObjects(device, desc.compute.module, .{ .compute = device.device.?.createComputePipeline(desc).? }, if (desc.label) |label| label[0..std.mem.len(label) :0] else "");
+    }
+
+    pub fn createCompute(device: *Device, filename: [:0]const u8) !Shader {
+        const module = try loadModule(device, filename);
+        return createComputeFromDesc(device, &wgpu.ComputePipelineDescriptor{
+            .label = filename,
+            .compute = .{
+                .module = module,
+                .entry_point = "cs_main",
+            },
+        });
+    }
+
     pub fn loadModule(device: *Device, filename: [*:0]const u8) !*wgpu.ShaderModule {
         const file = try std.fs.cwd().openFileZ(filename, .{});
         const content = try file.readToEndAllocOptions(device.alloc, std.math.maxInt(i32), null, @alignOf(u8), 0);
@@ -75,30 +90,80 @@ pub const Shader = struct {
     pub fn deinit(self: *Self) void {
         self.pipeline.release();
         self.module.release();
-        self.alloc.free(self.name);
+        self.device.alloc.free(self.name);
+    }
+
+    pub fn getBindGroupLayout(self: *Self, groupIndex: u32) ?*wgpu.BindGroupLayout {
+        return switch (self.pipeline) {
+            inline else => |pipe| pipe.getBindGroupLayout(groupIndex),
+        };
+    }
+
+    pub fn createBindGroupFromEntries(self: *Self, name: [:0]const u8, groupIndex: u32, entries: []const wgpu.BindGroupEntry) ?*wgpu.BindGroup {
+        const groupLayout = self.getBindGroupLayout(groupIndex) orelse return null;
+        defer groupLayout.release();
+        return self.device.device.?.createBindGroup(&wgpu.BindGroupDescriptor{
+            .label = name,
+            .layout = groupLayout,
+            .entry_count = entries.len,
+            .entries = entries.ptr,
+        });
+    }
+
+    pub fn createBindGroup(self: *Self, name: [:0]const u8, groupIndex: u32, args: anytype) ?*wgpu.BindGroup {
+        var entries: [args.len]wgpu.BindGroupEntry = undefined;
+        inline for (args, 0..) |arg, i| {
+            entries[i] = .{
+                .binding = @intCast(i),
+            };
+            switch (@TypeOf(arg)) {
+                *wgpu.Buffer => entries[i].buffer = arg,
+                *wgpu.Sampler => entries[i].sampler = arg,
+                *wgpu.TextureView => entries[i].texture_view = arg,
+                else => unreachable,
+            }
+        }
+        return createBindGroupFromEntries(self, name, groupIndex, &entries);
     }
 };
 
 pub fn getVertexFormat(comptime T: anytype) wgpu.VertexFormat {
-    return switch (@typeInfo(T)) {
-        .array => |a| switch (a.child) {
-            f32 => switch (a.len) {
-                2 => wgpu.VertexFormat.float32x2,
-                3 => wgpu.VertexFormat.float32x3,
-                4 => wgpu.VertexFormat.float32x4,
-                else => unreachable,
-            },
-            else => unreachable,
-        },
-        .int => |i| switch (i) {
-            @typeInfo(u32).int => wgpu.VertexFormat.uint32,
-            @typeInfo(i32).int => wgpu.VertexFormat.sint32,
-            else => unreachable,
-        },
-        .float => |f| switch (f) {
-            @typeInfo(f32).float => wgpu.VertexFormat.float32,
-            else => unreachable,
-        },
+    return switch (T) {
+        f32 => wgpu.VertexFormat.float32,
+        [2]f32 => wgpu.VertexFormat.float32x2,
+        [3]f32 => wgpu.VertexFormat.float32x3,
+        [4]f32 => wgpu.VertexFormat.float32x4,
+
+        u32 => wgpu.VertexFormat.uint32,
+        [2]u32 => wgpu.VertexFormat.uint32x2,
+        [3]u32 => wgpu.VertexFormat.uint32x3,
+        [4]u32 => wgpu.VertexFormat.uint32x4,
+
+        i32 => wgpu.VertexFormat.sint32,
+        [2]i32 => wgpu.VertexFormat.sint32x2,
+        [3]i32 => wgpu.VertexFormat.sint32x3,
+        [4]i32 => wgpu.VertexFormat.sint32x4,
+
+        [2]u8 => wgpu.VertexFormat.uint8x2,
+        [4]u8 => wgpu.VertexFormat.uint8x4,
+        @Vector(2, u8) => wgpu.VertexFormat.unorm8x2,
+        @Vector(4, u8) => wgpu.VertexFormat.unorm8x4,
+
+        [2]i8 => wgpu.VertexFormat.sint8x2,
+        [4]i8 => wgpu.VertexFormat.sint8x4,
+        @Vector(2, i8) => wgpu.VertexFormat.snorm8x2,
+        @Vector(4, i8) => wgpu.VertexFormat.snorm8x4,
+
+        [2]u16 => wgpu.VertexFormat.uint16x2,
+        [4]u16 => wgpu.VertexFormat.uint16x4,
+        @Vector(2, u16) => wgpu.VertexFormat.unorm16x2,
+        @Vector(4, u16) => wgpu.VertexFormat.unorm16x4,
+
+        [2]i16 => wgpu.VertexFormat.sint16x2,
+        [4]i16 => wgpu.VertexFormat.sint16x4,
+        @Vector(2, i16) => wgpu.VertexFormat.snorm16x2,
+        @Vector(4, i16) => wgpu.VertexFormat.snorm16x4,
+
         else => unreachable,
     };
 }

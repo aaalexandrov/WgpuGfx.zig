@@ -46,35 +46,23 @@ pub fn main() !void {
 
     device.init(&surface);
 
-    var plainShader = try wgfx.Shader.createRendering(
-        &device, 
-        "data/plain.wgsl", 
-        &[_]wgpu.VertexBufferLayout{ wgfx.getVertexBufferLayout(PlainVertexPosColorUv), }, 
-        &[_]wgpu.ColorTargetState{ .{ .format = surface.format, }, }
-    );
+    var plainShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.VertexBufferLayout{
+        wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
+    }, &[_]wgpu.ColorTargetState{
+        .{
+            .format = surface.format,
+        },
+    });
     defer plainShader.deinit();
 
-    const plainBindGroupLayout = plainShader.pipeline.render.getBindGroupLayout(0).?;
-    defer plainBindGroupLayout.release();
-
-    const plainVerticesBuffer = device.device.?.createBuffer(&wgpu.BufferDescriptor{
-        .label = "PlainVertices",
-        .usage = wgpu.BufferUsage.vertex | wgpu.BufferUsage.copy_dst,
-        .size = std.mem.sliceAsBytes(&PlainVertices).len,
-    }).?;
-    defer plainVerticesBuffer.release();
-    device.queue.?.writeBuffer(plainVerticesBuffer, 0, (&PlainVertices).ptr, std.mem.sliceAsBytes(&PlainVertices).len);
+    var plainVerticesBuffer = wgfx.Buffer.create(&device, "PlainVertices", wgpu.BufferUsage.vertex, std.mem.sliceAsBytes(&PlainVertices));
+    defer plainVerticesBuffer.deinit();
 
     var plainUniforms = PlainUniforms{};
-    const plainUniformsBuffer = device.device.?.createBuffer(&wgpu.BufferDescriptor{
-        .label = "PlainUniforms",
-        .usage = wgpu.BufferUsage.uniform | wgpu.BufferUsage.copy_dst,
-        .size = @sizeOf(PlainUniforms),
-    }).?;
-    defer plainUniformsBuffer.release();
-    device.queue.?.writeBuffer(plainUniformsBuffer, 0, &plainUniforms, @sizeOf(PlainUniforms));
+    var plainUniformsBuffer = wgfx.Buffer.createFromPtr(&device, "PlainUniforms", wgpu.BufferUsage.uniform, &plainUniforms);
+    defer plainUniformsBuffer.deinit();
 
-    const linearRepeatSampler = device.device.?.createSampler(&wgpu.SamplerDescriptor{
+    var linearRepeatSampler = wgfx.Sampler.create(&device, &wgpu.SamplerDescriptor{
         .label = "LinearRepeat",
         .address_mode_u = .repeat,
         .address_mode_v = .repeat,
@@ -82,8 +70,8 @@ pub fn main() !void {
         .min_filter = .linear,
         .mag_filter = .linear,
         .mipmap_filter = .linear,
-    }).?;
-    defer linearRepeatSampler.release();
+    });
+    defer linearRepeatSampler.deinit();
 
     const plainTexture = device.device.?.createTexture(&wgpu.TextureDescriptor{
         .label = "Texture",
@@ -95,36 +83,18 @@ pub fn main() !void {
     const plainTextureView = plainTexture.createView(null).?;
     defer plainTextureView.release();
 
-    var texData: [4 * 4]@Vector(4, u8) = undefined;
-    for (0..4) |y| {
-        for (0..4) |x| {
-            texData[y * 4 + x] = @splat(@truncate(255 * ((x + y) % 2)));
+    var texData: [4][4]@Vector(4, u8) = undefined;
+    for (&texData, 0..) |*row, y| {
+        for (row, 0..) |*e, x| {
+            e.* = @splat(@truncate(255 * ((x + y) % 2)));
         }
     }
     device.queue.?.writeTexture(&wgpu.ImageCopyTexture{
         .texture = plainTexture,
         .origin = .{},
-    }, &texData[0], std.mem.sliceAsBytes(&texData).len, &wgpu.TextureDataLayout{ .bytes_per_row = 4 * @sizeOf(std.meta.Elem(@TypeOf(texData))) }, &wgpu.Extent3D{ .width = 4, .height = 4, .depth_or_array_layers = 1 });
+    }, &texData[0], std.mem.sliceAsBytes(&texData).len, &wgpu.TextureDataLayout{ .bytes_per_row = @sizeOf(std.meta.Elem(@TypeOf(texData))) }, &wgpu.Extent3D{ .width = texData[0].len, .height = texData.len, .depth_or_array_layers = 1 });
 
-    const plainBindGroup = device.device.?.createBindGroup(&wgpu.BindGroupDescriptor{
-        .label = "Plain",
-        .layout = plainBindGroupLayout,
-        .entry_count = 3,
-        .entries = &[_]wgpu.BindGroupEntry{
-            .{
-                .binding = 0,
-                .buffer = plainUniformsBuffer,
-            },
-            .{
-                .binding = 1,
-                .sampler = linearRepeatSampler,
-            },
-            .{
-                .binding = 2,
-                .texture_view = plainTextureView,
-            },
-        },
-    }).?;
+    const plainBindGroup = plainShader.createBindGroup("Plain", 0, .{ plainUniformsBuffer.buffer, linearRepeatSampler.sampler, plainTextureView }).?;
     defer plainBindGroup.release();
 
     const timeStart = std.time.microTimestamp();
@@ -139,7 +109,7 @@ pub fn main() !void {
                 const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
                 const ortho = zm.orthographicOffCenterLh(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
                 plainUniforms.worldViewProj = zm.mul(rot, ortho);
-                device.queue.?.writeBuffer(plainUniformsBuffer, 0, &plainUniforms, @sizeOf(PlainUniforms));
+                plainUniformsBuffer.writePtr(0, &plainUniforms);
             }
 
             const encoder = device.device.?.createCommandEncoder(&wgpu.CommandEncoderDescriptor{ .label = "Commands" }).?;
@@ -158,7 +128,7 @@ pub fn main() !void {
             }).?;
 
             renderPass.setPipeline(plainShader.pipeline.render);
-            renderPass.setVertexBuffer(0, plainVerticesBuffer, 0, plainVerticesBuffer.getSize());
+            renderPass.setVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.getSize());
             renderPass.setBindGroup(0, plainBindGroup, 0, null);
             renderPass.draw(3, 1, 0, 0);
 
@@ -176,7 +146,7 @@ pub fn main() !void {
         } else |err| switch (err) {
             wgfx.AcquireTextureError.SurfaceNeedsConfigure => {
                 const width, const height = window.getSize();
-                surface.configure(&device, .{ @intCast(width), @intCast(height) }, wgpu.PresentMode.immediate);
+                surface.configure(.{ @intCast(width), @intCast(height) }, wgpu.PresentMode.immediate);
             },
             wgfx.AcquireTextureError.SurfaceLost => break,
         }

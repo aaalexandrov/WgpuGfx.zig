@@ -14,7 +14,7 @@ pub const Surface = struct {
     surface: *wgpu.Surface,
     format: wgpu.TextureFormat = wgpu.TextureFormat.@"undefined",
     name: [:0]const u8,
-    alloc: std.mem.Allocator,
+    device: *Device,
     surfaceView: ?*wgpu.TextureView = null,
     configured: bool = false,
 
@@ -29,20 +29,20 @@ pub const Surface = struct {
                 .label = ownName,
             }).?,
             .name = ownName,
-            .alloc = device.alloc,
+            .device = device,
         };
     }
 
     pub fn deinit(self: *Self) void {
         std.debug.assert(self.surfaceView == null);
         self.surface.release();
-        self.alloc.free(self.name);
+        self.device.alloc.free(self.name);
     }
 
-    pub fn configure(self: *Self, device: *Device, size: [2]u32, presentMode: wgpu.PresentMode) void {
+    pub fn configure(self: *Self, size: [2]u32, presentMode: wgpu.PresentMode) void {
         std.debug.assert(self.surfaceView == null);
         self.surface.configure(&wgpu.SurfaceConfiguration{
-            .device = device.device.?,
+            .device = self.device.device.?,
             .format = self.format,
             .width = size[0],
             .height = size[1],
