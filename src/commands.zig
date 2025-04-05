@@ -58,4 +58,10 @@ pub const Commands = struct {
             .color_attachments = colorAttachments.ptr,
         }).?;
     }
+
+    pub fn beginComputePass(self: *Self, passName: [:0]const u8) *wgpu.ComputePassEncoder {
+        return self.encoder.?.beginComputePass(&wgpu.ComputePassDescriptor{
+            .label = passName,
+        }).?;
+    }
 };

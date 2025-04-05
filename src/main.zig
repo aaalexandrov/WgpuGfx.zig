@@ -4,6 +4,7 @@ const wgpu = @import("wgpu");
 const zm = @import("zmath");
 
 const wgfx = @import("wgfx.zig");
+const ds = @import("downsample.zig");
 
 const PlainUniforms = extern struct {
     worldViewProj: [4][4]f32 = zm.identity(),
@@ -73,26 +74,37 @@ pub fn main() !void {
     });
     defer linearRepeatSampler.deinit();
 
-    var texData: [4][4]@Vector(4, u8) = undefined;
+    var texData: [512][512]@Vector(4, u8) = undefined;
     for (&texData, 0..) |*row, y| {
         for (row, 0..) |*e, x| {
-            e.* = @splat(@truncate(255 * ((x + y) % 2)));
+            e.* = @splat(@truncate(255 * ((x / 16 + y / 16) % 2)));
         }
     }
     var plainTexture = wgfx.Texture.createFromDesc(&device, &wgpu.TextureDescriptor{
         .label = "Texture",
-        .usage = wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst,
+        .usage = wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst | wgpu.TextureUsage.storage_binding,
         .format = .rgba8_unorm,
-        .size = .{ .width = 4, .height = 4, },
+        .mip_level_count = std.math.log2_int(u32, @max(texData[0].len, texData.len)) + 1,
+        .size = .{
+            .width = @intCast(texData[0].len),
+            .height = @intCast(texData.len),
+        },
     });
     defer plainTexture.deinit();
     plainTexture.writeLevel(0, std.mem.sliceAsBytes(&texData));
+
+    var downsample = try ds.Downsample.create(&device, "data/downsample.wgsl");
+    defer downsample.deinit();
 
     const plainBindGroup = plainShader.createBindGroup("Plain", 0, .{ plainUniformsBuffer.buffer, linearRepeatSampler.sampler, plainTexture.view }).?;
     defer plainBindGroup.release();
 
     var commands = wgfx.Commands.create(&device, "commands");
     defer commands.deinit();
+    commands.start();
+    downsample.downsampleCommands(&commands, &plainTexture);
+    commands.submit();
+
     var frames: i64 = 0;
     const timeStart = std.time.microTimestamp();
     while (!window.shouldClose()) {
@@ -110,15 +122,11 @@ pub fn main() !void {
 
             commands.start();
             const renderPass = commands.beginRenderPass("main", &[_]wgpu.ColorAttachment{
-                    .{
-                        .view = surfTexView,
-                        .load_op = .clear,
-                        .store_op = .store,
-                        .clear_value = wgpu.Color{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
-                    },
+                .{
+                    .view = surfTexView,
+                    .clear_value = wgpu.Color{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
                 },
-                null
-            );
+            }, null);
 
             renderPass.setPipeline(plainShader.pipeline.render);
             renderPass.setVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.getSize());

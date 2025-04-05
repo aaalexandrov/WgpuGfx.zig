@@ -92,9 +92,12 @@ pub const Texture = struct {
         self.device.alloc.free(self.name);
     }
 
-    pub fn getView(self: *Self) *wgpu.TextureView {
-        self.view.reference();
-        return self.view;
+    pub fn getViewForLevel(self: *Self, mip: u32) *wgpu.TextureView {
+        return self.texture.createView(&wgpu.TextureViewDescriptor{
+            .label = self.name,
+            .base_mip_level = @intCast(mip),
+            .mip_level_count = 1,
+        }).?;
     }
 
     pub fn getSize(self: *Self) [4]u32 {
