@@ -5,3 +5,4 @@ pub usingnamespace @import("resources.zig");
 pub usingnamespace @import("commands.zig");
 
 pub usingnamespace @import("downsample.zig");
+pub usingnamespace @import("fixed_font.zig");
