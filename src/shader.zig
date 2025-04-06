@@ -36,7 +36,7 @@ pub const Shader = struct {
     }
 
     pub fn createRenderingFromDesc(device: *Device, desc: *const wgpu.RenderPipelineDescriptor) Shader {
-        return createFromObjects(device, desc.vertex.module, .{ .render = device.device.?.createRenderPipeline(desc).? }, if (desc.label) |label| label[0..std.mem.len(label) :0] else "");
+        return createFromObjects(device, desc.vertex.module, .{ .render = device.device.createRenderPipeline(desc).? }, if (desc.label) |label| label[0..std.mem.len(label) :0] else "");
     }
 
     pub fn createRendering(device: *Device, filename: [:0]const u8, vertexBuffers: []const wgpu.VertexBufferLayout, colorTargets: []const wgpu.ColorTargetState) !Shader {
@@ -61,7 +61,7 @@ pub const Shader = struct {
     }
 
     pub fn createComputeFromDesc(device: *Device, desc: *const wgpu.ComputePipelineDescriptor) Shader {
-        return createFromObjects(device, desc.compute.module, .{ .compute = device.device.?.createComputePipeline(desc).? }, if (desc.label) |label| label[0..std.mem.len(label) :0] else "");
+        return createFromObjects(device, desc.compute.module, .{ .compute = device.device.createComputePipeline(desc).? }, if (desc.label) |label| label[0..std.mem.len(label) :0] else "");
     }
 
     pub fn createCompute(device: *Device, filename: [:0]const u8) !Shader {
@@ -79,7 +79,7 @@ pub const Shader = struct {
         const file = try std.fs.cwd().openFileZ(filename, .{});
         const content = try file.readToEndAllocOptions(device.alloc, std.math.maxInt(i32), null, @alignOf(u8), 0);
         defer device.alloc.free(content);
-        return device.device.?.createShaderModule(&wgpu.ShaderModuleDescriptor{
+        return device.device.createShaderModule(&wgpu.ShaderModuleDescriptor{
             .next_in_chain = @ptrCast(&wgpu.ShaderModuleWGSLDescriptor{
                 .code = content,
             }),
@@ -102,7 +102,7 @@ pub const Shader = struct {
     pub fn createBindGroupFromEntries(self: *Self, name: [:0]const u8, groupIndex: u32, entries: []const wgpu.BindGroupEntry) ?*wgpu.BindGroup {
         const groupLayout = self.getBindGroupLayout(groupIndex) orelse return null;
         defer groupLayout.release();
-        return self.device.device.?.createBindGroup(&wgpu.BindGroupDescriptor{
+        return self.device.device.createBindGroup(&wgpu.BindGroupDescriptor{
             .label = name,
             .layout = groupLayout,
             .entry_count = entries.len,

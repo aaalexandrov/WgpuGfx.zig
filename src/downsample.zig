@@ -55,18 +55,10 @@ pub const Downsample = struct {
         srcView.release();
     }
 
-    pub fn downsampleCommands(self: *Self, commands: *Commands, texture: *Texture) void {
-        var computePass = commands.beginComputePass("downsample");
+    pub fn downsample(self: *Self, texture: *Texture, commands: ?*Commands) void {
+        var computePass = (commands orelse &self.device.uploadCommands).beginComputePass("downsample");
         self.downsamplePass(computePass, texture);
         computePass.end();
         computePass.release();
-    }
-
-    pub fn downsample(self: *Self, texture: *Texture) void {
-        var commands = Commands.create(self.device, "downsample");
-        commands.start();
-        downsampleCommands(self, &commands, texture);
-        commands.submit();
-        commands.deinit();
     }
 };

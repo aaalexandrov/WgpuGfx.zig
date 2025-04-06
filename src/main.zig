@@ -94,8 +94,9 @@ pub fn main() !void {
     });
     defer plainTexture.deinit();
     plainTexture.writeLevel(0, 0, std.mem.sliceAsBytes(&texData));
+    device.downsample.downsample(&plainTexture, null);
 
-    var fontTexture = try wgfx.Texture.load(&device, "data/font_10x20.png", wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst | wgpu.TextureUsage.storage_binding, 0, 4);
+    var fontTexture = try wgfx.Texture.load(&device, "data/font_10x20.png", wgpu.TextureUsage.texture_binding, 0, 4);
     defer fontTexture.deinit();
 
     const plainBindGroup = plainShader.createBindGroup("Plain", 0, .{ plainUniformsBuffer.buffer, linearRepeatSampler.sampler, plainTexture.view }).?;
@@ -103,11 +104,6 @@ pub fn main() !void {
 
     var commands = wgfx.Commands.create(&device, "commands");
     defer commands.deinit();
-    commands.start();
-    device.downsample.?.downsampleCommands(&commands, &plainTexture);
-    device.downsample.?.downsampleCommands(&commands, &fontTexture);
-    commands.submit();
-
     var frames: i64 = 0;
     const timeStart = std.time.microTimestamp();
     while (!window.shouldClose()) {
@@ -139,7 +135,7 @@ pub fn main() !void {
             renderPass.end();
             renderPass.release();
 
-            commands.submit();
+            device.submit(&commands, true);
 
             surface.present();
             frames += 1;
@@ -151,7 +147,7 @@ pub fn main() !void {
             wgfx.AcquireTextureError.SurfaceLost => break,
         }
 
-        _ = device.device.?.poll(false, null);
+        _ = device.device.poll(false, null);
         glfw.pollEvents();
     }
 

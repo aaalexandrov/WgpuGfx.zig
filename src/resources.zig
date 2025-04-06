@@ -14,7 +14,7 @@ pub const Buffer = struct {
 
     pub fn createFromDesc(device: *Device, desc: *const wgpu.BufferDescriptor) Buffer {
         return .{
-            .buffer = device.device.?.createBuffer(desc).?,
+            .buffer = device.device.createBuffer(desc).?,
             .name = devi.copyNameFromDescLabel(desc, device.alloc),
             .device = device,
         };
@@ -40,7 +40,7 @@ pub const Buffer = struct {
     }
 
     pub fn write(self: *Self, offset: u64, content: []const u8) void {
-        self.device.queue.?.writeBuffer(self.buffer, offset, content.ptr, content.len);
+        self.device.queue.writeBuffer(self.buffer, offset, content.ptr, content.len);
     }
 
     pub fn writePtr(self: *Self, offset: u64, contentPtr: anytype) void {
@@ -57,7 +57,7 @@ pub const Sampler = struct {
 
     pub fn create(device: *Device, desc: *const wgpu.SamplerDescriptor) Sampler {
         return .{
-            .sampler = device.device.?.createSampler(desc).?,
+            .sampler = device.device.createSampler(desc).?,
             .name = devi.copyNameFromDescLabel(desc, device.alloc),
             .device = device,
         };
@@ -78,7 +78,7 @@ pub const Texture = struct {
     const Self = @This();
 
     pub fn createFromDesc(device: *Device, desc: *const wgpu.TextureDescriptor) Texture {
-        const tex = device.device.?.createTexture(desc).?;
+        const tex = device.device.createTexture(desc).?;
         return .{
             .texture = tex,
             .view = tex.createView(null).?,
@@ -87,7 +87,7 @@ pub const Texture = struct {
         };
     }
 
-    pub fn load(device: *Device, filename: [:0]const u8, usage: wgpu.TextureUsageFlags, numMips: u32, numComponents: u32) !Texture {
+    pub fn load(device: *Device, filename: [:0]const u8, usage_: wgpu.TextureUsageFlags, numMips: u32, numComponents: u32) !Texture {
         var img = try zstbi.Image.loadFromFile(filename, numComponents);
         defer img.deinit();
         if (img.bytes_per_component != 1)
@@ -99,6 +99,7 @@ pub const Texture = struct {
             else => return error.InvalidEnum,
         };
         const numLevels = if (numMips == 0) getMaxNumLevels(img.width, img.height, 1) else numMips;
+        const usage = usage_ | wgpu.TextureUsage.copy_dst | if (numLevels > 1) wgpu.TextureUsage.storage_binding else wgpu.TextureUsage.none;
         var tex = createFromDesc(device, &wgpu.TextureDescriptor{
             .label = filename,
             .format = format,
@@ -111,7 +112,8 @@ pub const Texture = struct {
         });
         tex.writeLevel(0, img.bytes_per_row, img.data);
 
-        // TODO: downsample next levels?
+        if (numLevels > 0)
+            device.downsample.downsample(&tex, null);
 
         return tex;
     }
@@ -151,7 +153,7 @@ pub const Texture = struct {
         const formatSize = getTextureFormatSize(format);
         const rowSize = if (bytesPerRow == 0) width * formatSize else bytesPerRow;
         std.debug.assert(rowSize * height * depth == content.len);
-        self.device.queue.?.writeTexture(
+        self.device.queue.writeTexture(
             &wgpu.ImageCopyTexture{
                 .texture = self.texture,
                 .mip_level = level,

@@ -42,7 +42,7 @@ pub const Surface = struct {
     pub fn configure(self: *Self, size: [2]u32, presentMode: wgpu.PresentMode) void {
         std.debug.assert(self.surfaceView == null);
         self.surface.configure(&wgpu.SurfaceConfiguration{
-            .device = self.device.device.?,
+            .device = self.device.device,
             .format = self.format,
             .width = size[0],
             .height = size[1],
