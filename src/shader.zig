@@ -127,7 +127,7 @@ pub const Shader = struct {
     }
 };
 
-pub fn getVertexFormat(comptime T: anytype) wgpu.VertexFormat {
+pub fn getVertexFormat(comptime T: type) wgpu.VertexFormat {
     return switch (T) {
         f32 => wgpu.VertexFormat.float32,
         [2]f32 => wgpu.VertexFormat.float32x2,
@@ -168,7 +168,7 @@ pub fn getVertexFormat(comptime T: anytype) wgpu.VertexFormat {
     };
 }
 
-pub fn getVertexAttributes(comptime T: anytype) [std.meta.fields(T).len]wgpu.VertexAttribute {
+pub fn getVertexAttributes(comptime T: type) [std.meta.fields(T).len]wgpu.VertexAttribute {
     var attrs: [std.meta.fields(T).len]wgpu.VertexAttribute = undefined;
     inline for (std.meta.fields(T), 0..) |field, i| {
         attrs[i] = .{
@@ -180,7 +180,7 @@ pub fn getVertexAttributes(comptime T: anytype) [std.meta.fields(T).len]wgpu.Ver
     return attrs;
 }
 
-pub fn getVertexBufferLayout(comptime T: anytype) wgpu.VertexBufferLayout {
+pub fn getVertexBufferLayout(comptime T: type) wgpu.VertexBufferLayout {
     const attrs = struct {
         const attr = getVertexAttributes(T);
     };
@@ -188,5 +188,13 @@ pub fn getVertexBufferLayout(comptime T: anytype) wgpu.VertexBufferLayout {
         .array_stride = @sizeOf(T),
         .attribute_count = attrs.attr.len,
         .attributes = &attrs.attr,
+    };
+}
+
+pub fn getIndexFormat(comptime T: type) wgpu.IndexFormat {
+    return switch (T) {
+        u16 => wgpu.IndexFormat.uint16,
+        u32 => wgpu.IndexFormat.uint32,
+        else => unreachable,
     };
 }
