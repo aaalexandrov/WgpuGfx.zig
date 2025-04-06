@@ -4,12 +4,15 @@ const wgpu = @import("wgpu");
 const surf = @import("surface.zig");
 const Surface = surf.Surface;
 
+const Downsample = @import("downsample.zig").Downsample;
+
 pub const Device = struct {
     alloc: std.mem.Allocator,
     instance: *wgpu.Instance,
     adapter: ?*wgpu.Adapter = null,
     device: ?*wgpu.Device = null,
     queue: ?*wgpu.Queue = null,
+    downsample: ?*Downsample = null,
 
     const Self = @This();
 
@@ -44,9 +47,15 @@ pub const Device = struct {
             .required_limits = null,
         }).device.?;
         self.queue = self.device.?.getQueue().?;
+
+        self.downsample = self.alloc.create(Downsample) catch unreachable;
+        self.downsample.?.* = Downsample.create(self, "data/downsample.wgsl") catch unreachable;
     }
 
     pub fn deinit(self: *Self) void {
+        self.downsample.?.deinit();
+        self.alloc.destroy(self.downsample.?);
+        self.downsample = null;
         releaseObj(&self.queue);
         releaseObj(&self.device);
         releaseObj(&self.adapter);

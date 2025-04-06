@@ -2,9 +2,9 @@ const std = @import("std");
 const glfw = @import("zglfw");
 const wgpu = @import("wgpu");
 const zm = @import("zmath");
+const zstbi = @import("zstbi");
 
 const wgfx = @import("wgfx.zig");
-const ds = @import("downsample.zig");
 
 const PlainUniforms = extern struct {
     worldViewProj: [4][4]f32 = zm.identity(),
@@ -30,6 +30,8 @@ pub fn main() !void {
         if (deinit_status == .leak)
             @panic("Memory leaks detected!");
     }
+    zstbi.init(alloc);
+    defer zstbi.deinit();
 
     var device = wgfx.Device.create(alloc);
     defer device.deinit();
@@ -84,17 +86,17 @@ pub fn main() !void {
         .label = "Texture",
         .usage = wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst | wgpu.TextureUsage.storage_binding,
         .format = .rgba8_unorm,
-        .mip_level_count = std.math.log2_int(u32, @max(texData[0].len, texData.len)) + 1,
+        .mip_level_count = wgfx.Texture.getMaxNumLevels(@intCast(texData[0].len), @intCast(texData.len), 1),
         .size = .{
             .width = @intCast(texData[0].len),
             .height = @intCast(texData.len),
         },
     });
     defer plainTexture.deinit();
-    plainTexture.writeLevel(0, std.mem.sliceAsBytes(&texData));
+    plainTexture.writeLevel(0, 0, std.mem.sliceAsBytes(&texData));
 
-    var downsample = try ds.Downsample.create(&device, "data/downsample.wgsl");
-    defer downsample.deinit();
+    var fontTexture = try wgfx.Texture.load(&device, "data/font_10x20.png", wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst | wgpu.TextureUsage.storage_binding, 0, 4);
+    defer fontTexture.deinit();
 
     const plainBindGroup = plainShader.createBindGroup("Plain", 0, .{ plainUniformsBuffer.buffer, linearRepeatSampler.sampler, plainTexture.view }).?;
     defer plainBindGroup.release();
@@ -102,7 +104,8 @@ pub fn main() !void {
     var commands = wgfx.Commands.create(&device, "commands");
     defer commands.deinit();
     commands.start();
-    downsample.downsampleCommands(&commands, &plainTexture);
+    device.downsample.?.downsampleCommands(&commands, &plainTexture);
+    device.downsample.?.downsampleCommands(&commands, &fontTexture);
     commands.submit();
 
     var frames: i64 = 0;

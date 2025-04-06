@@ -1,17 +1,27 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
 
-const wgfx = @import("wgfx.zig");
+const devi = @import("device.zig");
+const Device = devi.Device;
+
+const shdr = @import("shader.zig");
+const Shader = shdr.Shader;
+
+const reso = @import("resources.zig");
+const Texture = reso.Texture;
+
+const cmds = @import("commands.zig");
+const Commands = cmds.Commands;
 
 pub const Downsample = struct {
-    device: *wgfx.Device,
-    shader: wgfx.Shader,
+    device: *Device,
+    shader: Shader,
 
     const Self = @This();
     const groupSize: @Vector(2, u32) = .{8, 8};
 
-    pub fn create(device: *wgfx.Device, shaderFile: [:0]const u8) !Downsample {
-        const shader = try wgfx.Shader.createCompute(device, shaderFile);
+    pub fn create(device: *Device, shaderFile: [:0]const u8) !Downsample {
+        const shader = try Shader.createCompute(device, shaderFile);
         return .{
             .device = device,
             .shader = shader,
@@ -22,7 +32,7 @@ pub const Downsample = struct {
         self.shader.deinit();
     }
 
-    pub fn downsamplePass(self: *Self, computePass: *wgpu.ComputePassEncoder, texture: *wgfx.Texture) void {
+    pub fn downsamplePass(self: *Self, computePass: *wgpu.ComputePassEncoder, texture: *Texture) void {
         std.debug.assert(texture.texture.getFormat() == wgpu.TextureFormat.rgba8_unorm);
         computePass.setPipeline(self.shader.pipeline.compute);
         const mips = texture.texture.getMipLevelCount();
@@ -45,15 +55,15 @@ pub const Downsample = struct {
         srcView.release();
     }
 
-    pub fn downsampleCommands(self: *Self, commands: *wgfx.Commands, texture: *wgfx.Texture) void {
+    pub fn downsampleCommands(self: *Self, commands: *Commands, texture: *Texture) void {
         var computePass = commands.beginComputePass("downsample");
         self.downsamplePass(computePass, texture);
         computePass.end();
         computePass.release();
     }
 
-    pub fn downsample(self: *Self, texture: *wgfx.Texture) void {
-        var commands = wgfx.Commands.create(self.device, "downsample");
+    pub fn downsample(self: *Self, texture: *Texture) void {
+        var commands = Commands.create(self.device, "downsample");
         commands.start();
         downsampleCommands(self, &commands, texture);
         commands.submit();

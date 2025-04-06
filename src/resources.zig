@@ -1,5 +1,6 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
+const zstbi = @import("zstbi");
 
 const devi = @import("device.zig");
 const Device = devi.Device;
@@ -86,10 +87,43 @@ pub const Texture = struct {
         };
     }
 
+    pub fn load(device: *Device, filename: [:0]const u8, usage: wgpu.TextureUsageFlags, numMips: u32, numComponents: u32) !Texture {
+        var img = try zstbi.Image.loadFromFile(filename, numComponents);
+        defer img.deinit();
+        if (img.bytes_per_component != 1)
+            return error.InvalidValue;
+        const format = switch (img.num_components) {
+            1 => wgpu.TextureFormat.r8_unorm,
+            2 => wgpu.TextureFormat.rg8_unorm,
+            4 => wgpu.TextureFormat.rgba8_unorm,
+            else => return error.InvalidEnum,
+        };
+        const numLevels = if (numMips == 0) getMaxNumLevels(img.width, img.height, 1) else numMips;
+        var tex = createFromDesc(device, &wgpu.TextureDescriptor{
+            .label = filename,
+            .format = format,
+            .usage = usage,
+            .mip_level_count = numLevels,
+            .size = wgpu.Extent3D{
+                .width = img.width,
+                .height = img.height,
+            },
+        });
+        tex.writeLevel(0, img.bytes_per_row, img.data);
+
+        // TODO: downsample next levels?
+
+        return tex;
+    }
+
     pub fn deinit(self: *Self) void {
         self.texture.release();
         self.view.release();
         self.device.alloc.free(self.name);
+    }
+
+    pub fn getMaxNumLevels(width: u32, height: u32, depth: u32) u32 {
+        return std.math.log2_int(u32, @max(width, height, depth)) + 1;
     }
 
     pub fn getViewForLevel(self: *Self, mip: u32) *wgpu.TextureView {
@@ -109,13 +143,13 @@ pub const Texture = struct {
         };
     }
 
-    pub fn writeLevel(self: *Self, level: u32, content: []const u8) void {
+    pub fn writeLevel(self: *Self, level: u32, bytesPerRow: u32, content: []const u8) void {
         const width = self.texture.getWidth();
         const height = self.texture.getHeight();
         const depth = self.texture.getDepthOrArrayLayers();
         const format = self.texture.getFormat();
         const formatSize = getTextureFormatSize(format);
-        const rowSize = width * formatSize;
+        const rowSize = if (bytesPerRow == 0) width * formatSize else bytesPerRow;
         std.debug.assert(rowSize * height * depth == content.len);
         self.device.queue.?.writeTexture(
             &wgpu.ImageCopyTexture{
