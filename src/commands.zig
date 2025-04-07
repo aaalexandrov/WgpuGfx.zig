@@ -46,7 +46,7 @@ pub const Commands = struct {
         devi.releaseObj(&self.encoder);
     }
 
-    pub fn beginRenderPass(self: *Self, passName: [:0]const u8, colorAttachments: []const wgpu.ColorAttachment, depthAttachment: ?*wgpu.DepthStencilAttachment) *wgpu.RenderPassEncoder {
+    pub fn beginRenderPass(self: *Self, passName: [:0]const u8, colorAttachments: []const wgpu.ColorAttachment, depthAttachment: ?*const wgpu.DepthStencilAttachment) *wgpu.RenderPassEncoder {
         if (self.encoder == null)
             self.start();
         return self.encoder.?.beginRenderPass(&wgpu.RenderPassDescriptor{

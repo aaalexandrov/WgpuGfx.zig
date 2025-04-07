@@ -50,23 +50,40 @@ pub fn main() !void {
 
     device.init(&surface);
 
+    const depthStencilFormat = wgpu.TextureFormat.depth32_float;
+
     var plainShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.VertexBufferLayout{
-        wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
-    }, &[_]wgpu.ColorTargetState{
-        .{
-            .format = surface.format,
+            wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
         },
-    });
+        &wgpu.DepthStencilState {
+            .format = depthStencilFormat,
+            .depth_write_enabled = @intFromBool(true),
+            .depth_compare = .less,
+            .stencil_front = .{},
+            .stencil_back = .{},
+        }, 
+        &[_]wgpu.ColorTargetState{
+            .{ .format = surface.format, },
+        }
+    );
     defer plainShader.deinit();
 
     var fontShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.VertexBufferLayout{
-        wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
-    }, &[_]wgpu.ColorTargetState{
-        .{
-            .format = surface.format,
-            .blend = &wgpu.BlendState.alpha_blending,
+            wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
         },
-    });
+        &wgpu.DepthStencilState {
+            .format = depthStencilFormat,
+            .depth_compare = .always,
+            .stencil_front = .{},
+            .stencil_back = .{},
+        }, 
+        &[_]wgpu.ColorTargetState{
+            .{
+                .format = surface.format,
+                .blend = &wgpu.BlendState.alpha_blending,
+            },
+        }
+    );
     defer fontShader.deinit();
 
     var plainVerticesBuffer = wgfx.Buffer.create(&device, "PlainVertices", wgpu.BufferUsage.vertex, std.mem.sliceAsBytes(&PlainVertices));
@@ -115,6 +132,10 @@ pub fn main() !void {
 
     var commands = wgfx.Commands.create(&device, "commands");
     defer commands.deinit();
+
+    var depthTexture: ?wgfx.Texture = null;
+    defer wgfx.deinitObj(&depthTexture);
+
     var frames: i64 = 0;
     const timeStart = std.time.microTimestamp();
     var timePrev = timeStart;
@@ -135,16 +156,23 @@ pub fn main() !void {
                 timePrev = timeNow;
 
                 fontRender.clear();
-                fontRender.addLine(msg, .{ 20, 20 }, .{ 0, 0, 1 }, .{ 2, 2 });
+                fontRender.addLine(msg, .{ 20, 20 }, .{ 0, 0, 1 }, .{ 1.5, 1.5 });
             }
 
             commands.start();
             const renderPass = commands.beginRenderPass("main", &[_]wgpu.ColorAttachment{
-                .{
-                    .view = surfTexView,
-                    .clear_value = wgpu.Color{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
-                },
-            }, null);
+                    .{
+                        .view = surfTexView,
+                        .clear_value = wgpu.Color{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
+                    },
+                }, 
+                &wgpu.DepthStencilAttachment {
+                    .view = depthTexture.?.view,
+                    .depth_load_op = .clear,
+                    .depth_store_op = .store,
+                    .depth_clear_value = 1.0,
+                }
+            );
 
             renderPass.setPipeline(plainShader.pipeline.render);
             renderPass.setVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.getSize());
@@ -164,6 +192,14 @@ pub fn main() !void {
             wgfx.AcquireTextureError.SurfaceNeedsConfigure => {
                 const width, const height = window.getSize();
                 surface.configure(.{ @intCast(width), @intCast(height) }, wgpu.PresentMode.immediate);
+
+                wgfx.deinitObj(&depthTexture);
+                depthTexture = wgfx.Texture.createFromDesc(&device, &wgpu.TextureDescriptor{
+                    .label = "Depth",
+                    .format = depthStencilFormat,
+                    .usage = wgpu.TextureUsage.render_attachment,
+                    .size = .{.width = @intCast(width), .height = @intCast(height), },
+                });
             },
             wgfx.AcquireTextureError.SurfaceLost => break,
         }

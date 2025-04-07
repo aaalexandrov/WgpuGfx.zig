@@ -101,6 +101,13 @@ pub fn releaseObj(ptr: anytype) void {
     }
 }
 
+pub fn deinitObj(ptr: anytype) void {
+    if (ptr.*) |*obj| {
+        obj.*.deinit();
+        ptr.* = null;
+    }
+}
+
 pub fn copyNameFromDescLabel(desc: anytype, alloc: std.mem.Allocator) [:0]const u8 {
     return if (desc.label) |label| blk: {
         const len = std.mem.len(label);

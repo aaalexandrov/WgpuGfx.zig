@@ -39,7 +39,7 @@ pub const Shader = struct {
         return createFromObjects(device, desc.vertex.module, .{ .render = device.device.createRenderPipeline(desc).? }, if (desc.label) |label| label[0..std.mem.len(label) :0] else "");
     }
 
-    pub fn createRendering(device: *Device, filename: [:0]const u8, vertexBuffers: []const wgpu.VertexBufferLayout, colorTargets: []const wgpu.ColorTargetState) !Shader {
+    pub fn createRendering(device: *Device, filename: [:0]const u8, vertexBuffers: []const wgpu.VertexBufferLayout, depthStencil: ?*const wgpu.DepthStencilState, colorTargets: []const wgpu.ColorTargetState) !Shader {
         const module = try loadModule(device, filename);
         return createRenderingFromDesc(device, &wgpu.RenderPipelineDescriptor{
             .label = filename,
@@ -51,6 +51,7 @@ pub const Shader = struct {
             },
             .primitive = .{},
             .multisample = .{},
+            .depth_stencil = depthStencil,
             .fragment = &wgpu.FragmentState{
                 .module = module,
                 .entry_point = "fs_main",
