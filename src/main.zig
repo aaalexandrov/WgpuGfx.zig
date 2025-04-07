@@ -145,10 +145,11 @@ pub fn main() !void {
             const width, const height = window.getSize();
             {
                 const timeNow = std.time.microTimestamp();
-                const rot = zm.matFromAxisAngle(.{ 0, 0, 1, 0 }, @floatCast(@as(f64, @floatFromInt(timeNow - timeStart)) / 1e6));
+                const angle = @as(f64, @floatFromInt(timeNow - timeStart)) / 1e6;
+                const rot = zm.matFromAxisAngle(.{ 0, 0, -1, 0 }, @floatCast(angle));
                 const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
                 const ortho = zm.orthographicOffCenterLh(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
-                plainUniforms.worldViewProj = zm.mul(rot, ortho);
+                plainUniforms.worldViewProj = zm.transpose(zm.mul(ortho,rot));
                 plainUniformsBuffer.writePtr(0, &plainUniforms);
 
                 var msgBuf: [256]u8 = undefined;
@@ -212,4 +213,3 @@ pub fn main() !void {
     const durationSecs: f64 = @as(f64, @floatFromInt(timeNow - timeStart)) / 1e6;
     std.debug.print("Frames: {d}, seconds: {d:.3}, FPS: {d:.3}\n", .{ frames, durationSecs, @as(f64, @floatFromInt(frames)) / durationSecs });
 }
-
