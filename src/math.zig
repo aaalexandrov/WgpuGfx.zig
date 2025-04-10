@@ -290,6 +290,73 @@ pub fn MatType(comptime R: comptime_int, comptime C: comptime_int, T: type) type
             return trans;
         }
 
+        pub fn opPerColUnary(comptime op: type, self: Self) Self {
+            var res: Self = undefined;
+            inline for (0..Cols) |c| {
+                res.data[c] = op.op(self.data[c]);
+            }
+            return res;
+        }
+
+        pub fn neg(self: Self) Self {
+            const op = struct {
+                fn op(c: Col.Vec) Col.Vec {
+                    return -c;
+                }
+            };
+            return opPerColUnary(op, self);
+        }
+
+        pub fn rcp(self: Self) Self {
+            const op = struct {
+                fn op(c: Col.Vec) Col.Vec {
+                    return Col.vec(c).rcp().data;
+                }
+            };
+            return opPerColUnary(op, self);
+        }
+
+        pub fn sqrt(self: Self) Self {
+            const op = struct {
+                fn op(c: Col.Vec) Col.Vec {
+                    return @sqrt(c);
+                }
+            };
+            return opPerColUnary(op, self);
+        }
+
+        pub fn opPerColBinary(comptime op: anytype, self: Self, m: anytype) Self {
+            var res: Self = undefined;
+            inline for (0..Cols) |c| {
+                var mc: Col.Vec = undefined;
+                if (@TypeOf(m) == Self) {
+                    mc = m.data[c];
+                } else {
+                    mc = cast(Col.Vec, m);
+                }
+                res.data[c] = op.op(self.data[c], mc);
+            }
+            return res;
+        }
+
+        pub fn add(self: Self, m: anytype) Self {
+            const op = struct {
+                fn op(c: Col.Vec, mc: Col.Vec) Col.Vec {
+                    return c + mc;
+                }
+            };
+            return opPerColBinary(op, self, m);
+        }
+
+        pub fn sub(self: Self, m: anytype) Self {
+            const op = struct {
+                fn op(c: Col.Vec, mc: Col.Vec) Col.Vec {
+                    return c - mc;
+                }
+            };
+            return opPerColBinary(op, self, m);
+        }
+
         pub fn mul(self: Self, v: anytype) if (@TypeOf(v) == Row) Col else MatType(Rows, @TypeOf(v).Cols, T) {
             if (@TypeOf(v) == Row) {
                 var res = self.data[0] * @as(Col.Vec, @splat(v.data[0]));
@@ -297,24 +364,38 @@ pub fn MatType(comptime R: comptime_int, comptime C: comptime_int, T: type) type
                     res += self.data[c] * @as(Col.Vec, @splat(v.data[c]));
                 }
                 return Col.vec(res);
-            } else {
+            } else if (comptime isMatType(@TypeOf(v))) {
                 const Mat = @TypeOf(v);
-                if (comptime !isMatType(Mat))
-                    @compileError("Expected a matrix type");
                 if (comptime Cols != Mat.Rows)
                     @compileError("Incompatible matrix dimensions");
                 const Res = MatType(Rows, Mat.Cols, T);
                 var res: Res = undefined;
-                inline for (Res.Cols) |c| {
-                    var s = @as(Res.Col.Vec, @splat(self.data[c][0]));
-                    res.data[c] = v.data[0] * s;
+                inline for (0..Res.Cols) |c| {
+                    var s = @as(Res.Col.Vec, @splat(v.data[c][0]));
+                    res.data[c] = self.data[0] * s;
                     inline for (1..C) |i| {
-                        s = @as(Res.Col.Vec, @splat(self.data[c][i]));
-                        res.data[c] += v.data[i] * s;
+                        s = @as(Res.Col.Vec, @splat(v.data[c][i]));
+                        res.data[c] += self.data[i] * s;
                     }
                 }
                 return res;
+            } else {
+                const op = struct {
+                    fn op(c: Col.Vec, mc: Col.Vec) Col.Vec {
+                        return c * mc;
+                    }
+                };
+                return opPerColBinary(op, self, v);
             }
+        }
+
+        pub fn div(self: Self, m: anytype) Self {
+            const op = struct {
+                fn op(c: Col.Vec, mc: Col.Vec) Col.Vec {
+                    return c / mc;
+                }
+            };
+            return opPerColBinary(op, self, m);
         }
 
         pub fn eql(self: Self, m: Self) Row.BSelf {
@@ -371,7 +452,7 @@ test MatType {
     const Mat3x4f = MatType(3, 4, f32);
     const Mat4x3f = MatType(4, 3, f32);
     const Mat3x2f = MatType(3, 2, f32);
-    const Mat4x2f = MatType(3, 2, f32);
+    const Mat4x2f = MatType(4, 2, f32);
     const Vec3f = VecType(3, f32);
     const Vec4f = VecType(4, f32);
     const m0 = Mat3x4f.diag(1);
@@ -392,14 +473,23 @@ test MatType {
     try std.testing.expect(m1.transpose().mul(v1).eql(Vec3f.vec(.{ 3, 5, 5 })).all());
 
     const m2 = Mat3x2f.mat(.{
-        .{2, 0, 0},
-        .{0, 2, 0},
+        .{ 2, 0, 0 },
+        .{ 0, 2, 0 },
     });
     const res12 = Mat4x2f.mat(.{
-        .{2, 0, 0, 6},
-        .{0, 2, 0, 8},
+        .{ 2, 0, 0, 6 },
+        .{ 0, 2, 0, 8 },
     });
     try std.testing.expect(m1.mul(m2).eql(res12).all());
+    try std.testing.expect(res12.neg().eql(Mat4x2f.mat(.{
+        -res12.data[0],
+        -res12.data[1],
+    })).all());
+
+    try std.testing.expect(m2.add(5).eql(Mat3x2f.mat(.{
+        m2.data[0] + Vec3f.splat(5).data,
+        m2.data[1] + Vec3f.splat(5).data,
+    })).all());
 }
 
 pub fn DeclEnum(comptime valNames: []const [:0]const u8) type {
@@ -432,11 +522,11 @@ test DeclEnum {
 }
 
 pub fn isVecType(comptime t: type) bool {
-    return std.mem.indexOf(u8, @typeName(t), ".VecType(") != null;
+    return comptime (std.mem.indexOf(u8, @typeName(t), ".VecType(") != null);
 }
 
 pub fn isMatType(comptime t: type) bool {
-    return std.mem.indexOf(u8, @typeName(t), ".MatType(") != null;
+    return comptime (std.mem.indexOf(u8, @typeName(t), ".MatType(") != null);
 }
 
 pub fn cast(comptime T: type, v: anytype) T {
