@@ -44,6 +44,11 @@ pub fn VecType(comptime N: comptime_int, comptime T: type) type {
             return vec(@shuffle(Elem, self.data, undefined, mask));
         }
 
+        pub fn slice(self: Self, comptime start: usize, comptime end: usize) VecType(end - start, T) {
+            const Res = VecType(end - start, T);
+            return Res.vec(@as([N]T, self.data)[start..end].*);
+        }
+
         pub fn toVec(v: anytype) Self {
             return switch (@TypeOf(v)) {
                 Self => v,
@@ -202,6 +207,7 @@ pub fn VecType(comptime N: comptime_int, comptime T: type) type {
 }
 
 test VecType {
+    const Vec2f = VecType(2, f32);
     const Vec3f = VecType(3, f32);
     const v1 = Vec3f{ .data = .{ 1, 2, 3 } };
     const v2 = Vec3f.vec(.{ 1, 2, 3 });
@@ -225,6 +231,7 @@ test VecType {
     const vz = Vec3f.vec(.{ 0, 0, 1 });
     try std.testing.expect(@reduce(.And, vz.data == vx.cross(vy).data));
     try std.testing.expect(@reduce(.And, vy.cross(vx).data == -vx.cross(vy).data));
+    try std.testing.expect(Vec3f.vec(.{ 1, 2, 3 }).slice(1, 3).eql(Vec2f.vec(.{ 2, 3 })).all());
 }
 
 pub fn MatType(comptime R: comptime_int, comptime C: comptime_int, T: type) type {
@@ -490,6 +497,10 @@ test MatType {
         m2.data[0] + Vec3f.splat(5).data,
         m2.data[1] + Vec3f.splat(5).data,
     })).all());
+
+    const Vec2f = VecType(2, f32);
+    const zz = Vec2f.vec(@as([3]f32, Vec3f.vec(.{ 1, 2, 3 }).data)[1..3].*);
+    try std.testing.expect(zz.eql(Vec2f.vec(.{ 2, 3 })).all());
 }
 
 pub fn DeclEnum(comptime valNames: []const [:0]const u8) type {
@@ -559,7 +570,7 @@ pub fn cast(comptime T: type, v: anytype) T {
                 if (vectorT.len > vectorV.len)
                     @compileError("Target typecast vector length is greater than the source");
                 var res: T = undefined;
-                for (0..vectorT.len) |i|
+                inline for (0..vectorT.len) |i|
                     res[i] = cast(vectorT.child, v[i]);
                 break :blk res;
             },
