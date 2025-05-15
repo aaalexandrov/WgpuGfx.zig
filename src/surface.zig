@@ -5,14 +5,14 @@ const glfw = @import("zglfw");
 const devi = @import("device.zig");
 const Device = devi.Device;
 
-pub const AcquireTextureError = error {
+pub const AcquireTextureError = error{
     SurfaceNeedsConfigure,
     SurfaceLost,
 };
 
 pub const Surface = struct {
     surface: *wgpu.Surface,
-    format: wgpu.TextureFormat = wgpu.TextureFormat.@"undefined",
+    format: wgpu.TextureFormat = wgpu.TextureFormat.undefined,
     name: [:0]const u8,
     device: *Device,
     surfaceView: ?*wgpu.TextureView = null,
@@ -25,7 +25,7 @@ pub const Surface = struct {
         const ownName = device.alloc.dupeZ(u8, name) catch unreachable;
         return .{
             .surface = device.instance.createSurface(&wgpu.SurfaceDescriptor{
-                .next_in_chain = &chained.chain,
+                .next_in_chain = chained.getChain().?,
                 .label = ownName,
             }).?,
             .name = ownName,
@@ -76,25 +76,51 @@ pub const Surface = struct {
     }
 };
 
-const builtin = @import("builtin");
-pub const getSurfaceChain = switch (builtin.target.os.tag) {
-    .windows => getSurfaceChainWin32,
-    .linux => getSurfaceChainX11,
-    else => unreachable,
+const SurfaceChain = union(enum) {
+    win32: wgpu.SurfaceDescriptorFromWindowsHWND,
+    x11: wgpu.SurfaceDescriptorFromXlibWindow,
+    wayland: wgpu.SurfaceDescriptorFromWaylandSurface,
+    empty,
+
+    const Self = @This();
+
+    pub fn getChain(self: *const Self) ?*const wgpu.ChainedStruct {
+        return switch (self.*) {
+            .win32 => |val| &val.chain,
+            .x11 => |val| &val.chain,
+            .wayland => |val| &val.chain,
+            .empty => null,
+        };
+    }
 };
 
-fn getSurfaceChainX11(window: *glfw.Window) wgpu.SurfaceDescriptorFromXlibWindow {
-    return wgpu.SurfaceDescriptorFromXlibWindow{
-        .display = glfw.getX11Display().?,
-        .window = glfw.getX11Window(window),
+const builtin = @import("builtin");
+pub fn getSurfaceChain(window: *glfw.Window) SurfaceChain {
+    return switch (builtin.target.os.tag) {
+        .windows => getSurfaceChainWin32(window),
+        .linux => getSurfaceChainLinux(window),
+        else => unreachable,
     };
 }
 
-fn getSurfaceChainWin32(window: *glfw.Window) wgpu.SurfaceDescriptorFromWindowsHWND {
-    return wgpu.SurfaceDescriptorFromWindowsHWND{
+fn getSurfaceChainLinux(window: *glfw.Window) SurfaceChain {
+    return if (glfw.getX11Display()) |display|
+        SurfaceChain{ .x11 = wgpu.SurfaceDescriptorFromXlibWindow{
+            .display = display,
+            .window = glfw.getX11Window(window),
+        } }
+    else
+        SurfaceChain{ .wayland = wgpu.SurfaceDescriptorFromWaylandSurface{
+            .display = glfw.getWaylandDisplay().?,
+            .surface = glfw.getWaylandWindow(window).?,
+        } };
+}
+
+fn getSurfaceChainWin32(window: *glfw.Window) SurfaceChain {
+    return SurfaceChain{ .win32 = wgpu.SurfaceDescriptorFromWindowsHWND{
         .hinstance = std.os.windows.kernel32.GetModuleHandleW(null).?,
         .hwnd = glfw.getWin32Window(window).?,
-    };
+    } };
 }
 
 pub fn getSurfaceFormat(surface: *wgpu.Surface, adapter: *wgpu.Adapter) ?wgpu.TextureFormat {
