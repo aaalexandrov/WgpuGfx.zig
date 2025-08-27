@@ -1,8 +1,11 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
 
+const util = @import("util.zig");
+
 const surf = @import("surface.zig");
 const Surface = surf.Surface;
+
 
 const Downsample = @import("downsample.zig").Downsample;
 const Commands = @import("commands.zig").Commands;
@@ -88,32 +91,11 @@ pub const Device = struct {
         }
         if (buffersSlice.len > 0)
             self.queue.submit(buffersSlice);
-        releaseObj(&cmds.commands);
+        util.releaseObj(&cmds.commands);
         if (submitUploads)
-            releaseObj(&self.uploadCommands.commands);
+            util.releaseObj(&self.uploadCommands.commands);
     }
 };
-
-pub fn releaseObj(ptr: anytype) void {
-    if (ptr.*) |*obj| {
-        obj.*.release();
-        ptr.* = null;
-    }
-}
-
-pub fn deinitObj(ptr: anytype) void {
-    if (ptr.*) |*obj| {
-        obj.*.deinit();
-        ptr.* = null;
-    }
-}
-
-pub fn copyNameFromDescLabel(desc: anytype, alloc: std.mem.Allocator) [:0]const u8 {
-    return if (desc.label) |label| blk: {
-        const len = std.mem.len(label);
-        break :blk (alloc.dupeZ(u8, label[0..len]) catch unreachable)[0..len :0];
-    } else "";
-}
 
 fn logCallback(level: wgpu.LogLevel, message: ?[*:0]const u8, userdata: ?*anyopaque) callconv(.C) void {
     _ = userdata;

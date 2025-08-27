@@ -157,7 +157,7 @@ pub fn main() !void {
                 timePrev = timeNow;
 
                 fontRender.clear();
-                fontRender.addLine(msg, .{ 20, 20 }, .{ 0, 0, 1 }, .{ 1.5, 1.5 });
+                fontRender.addLine(msg, .{ 20, 20 }, .{ 0, 0, 1 }, .{ 1, 1 });
             }
 
             commands.start();

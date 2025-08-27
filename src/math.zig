@@ -138,16 +138,15 @@ pub fn VecType(comptime N: comptime_int, comptime T: type) type {
             return self - self.proj(orthogonal);
         }
 
-        pub usingnamespace if (N == 3) struct {
-            pub fn cross(self: Self, v: Self) Self {
-                var s0 = self.swizzle(.{ .y, .z, .x });
-                var v0 = v.swizzle(.{ .z, .x, .y });
-                const result = s0.mul(v0);
-                s0 = s0.swizzle(.{ .y, .z, .x });
-                v0 = v0.swizzle(.{ .z, .x, .y });
-                return result.sub(s0.mul(v0));
-            }
-        } else struct {};
+        pub fn cross(self: Self, v: Self) Self {
+            comptime std.debug.assert(N == 3);
+            var s0 = self.swizzle(.{ .y, .z, .x });
+            var v0 = v.swizzle(.{ .z, .x, .y });
+            const result = s0.mul(v0);
+            s0 = s0.swizzle(.{ .y, .z, .x });
+            v0 = v0.swizzle(.{ .z, .x, .y });
+            return result.sub(s0.mul(v0));
+        }
 
         pub fn min(self: Self, v: anytype) Self {
             return vec(@min(self.data, toVec(v).data));
@@ -189,20 +188,22 @@ pub fn VecType(comptime N: comptime_int, comptime T: type) type {
             return BSelf.vec(self.data >= toVec(v).data);
         }
 
-        pub usingnamespace if (T == bool) struct {
-            pub fn all(self: Self) bool {
-                return @reduce(.And, self.data);
-            }
-            pub fn any(self: Self) bool {
-                return @reduce(.Or, self.data);
-            }
-            pub fn @"and"(self: Self, v: Self) Self {
-                return vec(self.data & v.data);
-            }
-            pub fn @"or"(self: Self, v: Self) Self {
-                return vec(self.data | v.data);
-            }
-        } else struct {};
+        pub fn all(self: Self) bool {
+            comptime std.debug.assert(T == bool);
+            return @reduce(.And, self.data);
+        }
+        pub fn any(self: Self) bool {
+            comptime std.debug.assert(T == bool);
+            return @reduce(.Or, self.data);
+        }
+        pub fn @"and"(self: Self, v: Self) Self {
+            comptime std.debug.assert(T == bool);
+            return vec(self.data & v.data);
+        }
+        pub fn @"or"(self: Self, v: Self) Self {
+            comptime std.debug.assert(T == bool);
+            return vec(self.data | v.data);
+        }
     };
 }
 

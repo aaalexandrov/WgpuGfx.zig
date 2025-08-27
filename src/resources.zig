@@ -2,6 +2,7 @@ const std = @import("std");
 const wgpu = @import("wgpu");
 const zstbi = @import("zstbi");
 
+const util = @import("util.zig");
 const devi = @import("device.zig");
 const Device = devi.Device;
 
@@ -15,7 +16,7 @@ pub const Buffer = struct {
     pub fn createFromDesc(device: *Device, desc: *const wgpu.BufferDescriptor) Buffer {
         return .{
             .buffer = device.device.createBuffer(desc).?,
-            .name = devi.copyNameFromDescLabel(desc, device.alloc),
+            .name = util.copyNameFromDescLabel(desc, device.alloc),
             .device = device,
         };
     }
@@ -58,7 +59,7 @@ pub const Sampler = struct {
     pub fn create(device: *Device, desc: *const wgpu.SamplerDescriptor) Sampler {
         return .{
             .sampler = device.device.createSampler(desc).?,
-            .name = devi.copyNameFromDescLabel(desc, device.alloc),
+            .name = util.copyNameFromDescLabel(desc, device.alloc),
             .device = device,
         };
     }
@@ -82,7 +83,7 @@ pub const Texture = struct {
         return .{
             .texture = tex,
             .view = tex.createView(null).?,
-            .name = devi.copyNameFromDescLabel(desc, device.alloc),
+            .name = util.copyNameFromDescLabel(desc, device.alloc),
             .device = device,
         };
     }

@@ -1,6 +1,8 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
 
+const util = @import("util.zig");
+
 const devi = @import("device.zig");
 const Device = devi.Device;
 
@@ -43,7 +45,7 @@ pub const Commands = struct {
         self.commands = self.encoder.?.finish(&wgpu.CommandBufferDescriptor{
             .label = self.name,
         }).?;
-        devi.releaseObj(&self.encoder);
+        util.releaseObj(&self.encoder);
     }
 
     pub fn beginRenderPass(self: *Self, passName: [:0]const u8, colorAttachments: []const wgpu.ColorAttachment, depthAttachment: ?*const wgpu.DepthStencilAttachment) *wgpu.RenderPassEncoder {

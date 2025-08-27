@@ -2,6 +2,7 @@ const std = @import("std");
 const wgpu = @import("wgpu");
 const glfw = @import("zglfw");
 
+const util = @import("util.zig");
 const devi = @import("device.zig");
 const Device = devi.Device;
 
@@ -72,7 +73,7 @@ pub const Surface = struct {
     pub fn present(self: *Self) void {
         std.debug.assert(self.surfaceView != null);
         self.surface.present();
-        devi.releaseObj(&self.surfaceView);
+        util.releaseObj(&self.surfaceView);
     }
 };
 
@@ -95,13 +96,11 @@ const SurfaceChain = union(enum) {
 };
 
 const builtin = @import("builtin");
-pub fn getSurfaceChain(window: *glfw.Window) SurfaceChain {
-    return switch (builtin.target.os.tag) {
-        .windows => getSurfaceChainWin32(window),
-        .linux => getSurfaceChainLinux(window),
-        else => unreachable,
-    };
-}
+pub const getSurfaceChain: fn (window: *glfw.Window) SurfaceChain = switch (builtin.target.os.tag) {
+    .windows => getSurfaceChainWin32,
+    .linux => getSurfaceChainLinux,
+    else => unreachable
+};
 
 fn getSurfaceChainLinux(window: *glfw.Window) SurfaceChain {
     return if (glfw.getX11Display()) |display|
