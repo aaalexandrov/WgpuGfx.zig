@@ -14,20 +14,20 @@ pub const AcquireTextureError = error{
 pub const Surface = struct {
     surface: *wgpu.Surface,
     format: wgpu.TextureFormat = wgpu.TextureFormat.undefined,
-    name: [:0]const u8,
+    name: []const u8,
     device: *Device,
     surfaceView: ?*wgpu.TextureView = null,
     configured: bool = false,
 
     const Self = @This();
 
-    pub fn create(device: *Device, window: *glfw.Window, name: [:0]const u8) Self {
+    pub fn create(device: *Device, window: *glfw.Window, name: []const u8) Self {
         const chained = getSurfaceChain(window);
-        const ownName = device.alloc.dupeZ(u8, name) catch unreachable;
+        const ownName = device.alloc.dupe(u8, name) catch unreachable;
         return .{
             .surface = device.instance.createSurface(&wgpu.SurfaceDescriptor{
                 .next_in_chain = chained.getChain().?,
-                .label = ownName,
+                .label = wgpu.StringView.fromSlice(ownName),
             }).?,
             .name = ownName,
             .device = device,
@@ -58,29 +58,27 @@ pub const Surface = struct {
             return AcquireTextureError.SurfaceNeedsConfigure;
         var surfTex: wgpu.SurfaceTexture = undefined;
         self.surface.getCurrentTexture(&surfTex);
-        if (surfTex.suboptimal != 0)
-            return AcquireTextureError.SurfaceNeedsConfigure;
         switch (surfTex.status) {
-            .success => {
-                self.surfaceView = surfTex.texture.createView(null).?;
+            .success_optimal => {
+                self.surfaceView = surfTex.texture.?.createView(null).?;
                 return self.surfaceView.?;
             },
-            .outdated, .lost => return AcquireTextureError.SurfaceNeedsConfigure,
+            .outdated, .lost, .success_suboptimal => return AcquireTextureError.SurfaceNeedsConfigure,
             else => return AcquireTextureError.SurfaceLost,
         }
     }
 
     pub fn present(self: *Self) void {
         std.debug.assert(self.surfaceView != null);
-        self.surface.present();
+        _ = self.surface.present();
         util.releaseObj(&self.surfaceView);
     }
 };
 
 const SurfaceChain = union(enum) {
-    win32: wgpu.SurfaceDescriptorFromWindowsHWND,
-    x11: wgpu.SurfaceDescriptorFromXlibWindow,
-    wayland: wgpu.SurfaceDescriptorFromWaylandSurface,
+    win32: wgpu.SurfaceSourceWindowsHWND,
+    x11: wgpu.SurfaceSourceXlibWindow,
+    wayland: wgpu.SurfaceSourceWaylandSurface,
     empty,
 
     const Self = @This();
@@ -104,19 +102,19 @@ pub const getSurfaceChain: fn (window: *glfw.Window) SurfaceChain = switch (buil
 
 fn getSurfaceChainLinux(window: *glfw.Window) SurfaceChain {
     return if (glfw.getX11Display()) |display|
-        SurfaceChain{ .x11 = wgpu.SurfaceDescriptorFromXlibWindow{
+        SurfaceChain{ .x11 = wgpu.SurfaceSourceXlibWindow{
             .display = display,
             .window = glfw.getX11Window(window),
         } }
     else
-        SurfaceChain{ .wayland = wgpu.SurfaceDescriptorFromWaylandSurface{
+        SurfaceChain{ .wayland = wgpu.SurfaceSourceWaylandSurface{
             .display = glfw.getWaylandDisplay().?,
             .surface = glfw.getWaylandWindow(window).?,
         } };
 }
 
 fn getSurfaceChainWin32(window: *glfw.Window) SurfaceChain {
-    return SurfaceChain{ .win32 = wgpu.SurfaceDescriptorFromWindowsHWND{
+    return SurfaceChain{ .win32 = wgpu.SurfaceSourceWindowsHWND{
         .hinstance = std.os.windows.kernel32.GetModuleHandleW(null).?,
         .hwnd = glfw.getWin32Window(window).?,
     } };
@@ -124,7 +122,8 @@ fn getSurfaceChainWin32(window: *glfw.Window) SurfaceChain {
 
 pub fn getSurfaceFormat(surface: *wgpu.Surface, adapter: *wgpu.Adapter) ?wgpu.TextureFormat {
     var surfaceCaps: wgpu.SurfaceCapabilities = undefined;
-    surface.getCapabilities(adapter, &surfaceCaps);
+    if (surface.getCapabilities(adapter, &surfaceCaps) != .success)
+        return null;
     defer surfaceCaps.freeMembers();
     return if (surfaceCaps.format_count > 0) surfaceCaps.formats[0] else null;
 }

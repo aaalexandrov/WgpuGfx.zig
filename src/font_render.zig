@@ -51,16 +51,16 @@ pub const FontRender = struct {
             .sampler = sampler,
             .vertices = .init(device.alloc),
             .uniformBuffer = .createFromDesc(device, &wgpu.BufferDescriptor{
-                .label = "FontUniforms",
-                .usage = wgpu.BufferUsage.uniform | wgpu.BufferUsage.copy_dst,
+                .label = wgpu.StringView.fromSlice("FontUniforms"),
+                .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
                 .size = @sizeOf(UniformStruct),
             }),
             .vertexBuffer = .createFromDesc(device, &wgpu.BufferDescriptor{
-                .label = "FontVertices",
-                .usage = wgpu.BufferUsage.vertex | wgpu.BufferUsage.copy_dst,
+                .label = wgpu.StringView.fromSlice("FontVertices"),
+                .usage = wgpu.BufferUsages.vertex | wgpu.BufferUsages.copy_dst,
                 .size = @sizeOf(VertexStruct) * maxChars * 4,
             }),
-            .indexBuffer = .create(device, "FontIndices", wgpu.BufferUsage.index, std.mem.sliceAsBytes(&indices)),
+            .indexBuffer = .create(device, "FontIndices", wgpu.BufferUsages.index, std.mem.sliceAsBytes(&indices)),
         };
         fontRender.bindGroup = shader.createBindGroup("FontBinds", 0, .{
             fontRender.uniformBuffer.buffer,

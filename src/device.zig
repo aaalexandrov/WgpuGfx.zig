@@ -6,7 +6,6 @@ const util = @import("util.zig");
 const surf = @import("surface.zig");
 const Surface = surf.Surface;
 
-
 const Downsample = @import("downsample.zig").Downsample;
 const Commands = @import("commands.zig").Commands;
 
@@ -37,20 +36,21 @@ pub const Device = struct {
         self.adapter = self.instance.requestAdapterSync(&wgpu.RequestAdapterOptions{
             .compatible_surface = surface.surface,
             .power_preference = .high_performance,
-        }).adapter.?;
+        }, 1000).adapter.?;
 
         var adapterInfo: wgpu.AdapterInfo = undefined;
-        self.adapter.getInfo(&adapterInfo);
-        defer adapterInfo.freeMembers();
-        std.debug.print("Adapter: {s}, type: {?s}, backend: {?s}\n", .{ adapterInfo.device, std.enums.tagName(wgpu.AdapterType, adapterInfo.adapter_type), std.enums.tagName(wgpu.BackendType, adapterInfo.backend_type) });
+        if (self.adapter.getInfo(&adapterInfo) == .success) {
+            defer adapterInfo.freeMembers();
+            std.debug.print("Adapter: {?s}, type: {?s}, backend: {?s}\n", .{ adapterInfo.device.toSlice(), std.enums.tagName(wgpu.AdapterType, adapterInfo.adapter_type), std.enums.tagName(wgpu.BackendType, adapterInfo.backend_type) });
+        }
 
         std.debug.assert(surface.format == wgpu.TextureFormat.@"undefined");
         surface.format = surf.getSurfaceFormat(surface.surface, self.adapter).?;
         std.debug.print("Surface format: {?s}\n", .{std.enums.tagName(wgpu.TextureFormat, surface.format)});
 
-        self.device = self.adapter.requestDeviceSync(&wgpu.DeviceDescriptor{
+        self.device = self.adapter.requestDeviceSync(self.instance, &wgpu.DeviceDescriptor{
             .required_limits = null,
-        }).device.?;
+        }, 1000).device.?;
         self.queue = self.device.getQueue().?;
 
         self.uploadCommands = Commands.create(self, "DeviceUpload");
@@ -97,7 +97,7 @@ pub const Device = struct {
     }
 };
 
-fn logCallback(level: wgpu.LogLevel, message: ?[*:0]const u8, userdata: ?*anyopaque) callconv(.C) void {
+fn logCallback(level: wgpu.LogLevel, message: wgpu.StringView, userdata: ?*anyopaque) callconv(.C) void {
     _ = userdata;
-    std.debug.print("Wgpu {?s}: {?s}\n", .{ std.enums.tagName(wgpu.LogLevel, level), message });
+    std.debug.print("Wgpu {?s}: {?s}\n", .{ std.enums.tagName(wgpu.LogLevel, level), message.toSlice() });
 }

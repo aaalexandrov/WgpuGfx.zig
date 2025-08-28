@@ -15,7 +15,7 @@ pub const FixedFont = struct {
 
     pub fn create(device: *wgfx.Device, fontfile: [:0]const u8) !FixedFont {
         const charSize = try getCharSizeFromFilename(fontfile);
-        const texture = try wgfx.Texture.load(device, fontfile, wgpu.TextureUsage.texture_binding, 0, 4);
+        const texture = try wgfx.Texture.load(device, fontfile, wgpu.TextureUsages.texture_binding, 0, 4);
         std.debug.assert(texture.texture.getWidth() % charSize[0] == 0);
         std.debug.assert(texture.texture.getHeight() % charSize[1] == 0);
         return .{

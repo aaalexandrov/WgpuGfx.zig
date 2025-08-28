@@ -57,7 +57,7 @@ pub fn main() !void {
         },
         &wgpu.DepthStencilState {
             .format = depthStencilFormat,
-            .depth_write_enabled = @intFromBool(true),
+            .depth_write_enabled = .true,
             .depth_compare = .less,
             .stencil_front = .{},
             .stencil_back = .{},
@@ -73,6 +73,7 @@ pub fn main() !void {
         },
         &wgpu.DepthStencilState {
             .format = depthStencilFormat,
+            .depth_write_enabled = .false,
             .depth_compare = .always,
             .stencil_front = .{},
             .stencil_back = .{},
@@ -86,15 +87,15 @@ pub fn main() !void {
     );
     defer fontShader.deinit();
 
-    var plainVerticesBuffer = wgfx.Buffer.create(&device, "PlainVertices", wgpu.BufferUsage.vertex, std.mem.sliceAsBytes(&PlainVertices));
+    var plainVerticesBuffer = wgfx.Buffer.create(&device, "PlainVertices", wgpu.BufferUsages.vertex, std.mem.sliceAsBytes(&PlainVertices));
     defer plainVerticesBuffer.deinit();
 
     var plainUniforms = PlainUniforms{};
-    var plainUniformsBuffer = wgfx.Buffer.createFromPtr(&device, "PlainUniforms", wgpu.BufferUsage.uniform, &plainUniforms);
+    var plainUniformsBuffer = wgfx.Buffer.createFromPtr(&device, "PlainUniforms", wgpu.BufferUsages.uniform, &plainUniforms);
     defer plainUniformsBuffer.deinit();
 
     var linearRepeatSampler = wgfx.Sampler.create(&device, &wgpu.SamplerDescriptor{
-        .label = "LinearRepeat",
+        .label = wgpu.StringView.fromSlice("LinearRepeat"),
         .address_mode_u = .repeat,
         .address_mode_v = .repeat,
         .address_mode_w = .repeat,
@@ -111,8 +112,8 @@ pub fn main() !void {
         }
     }
     var plainTexture = wgfx.Texture.createFromDesc(&device, &wgpu.TextureDescriptor{
-        .label = "Texture",
-        .usage = wgpu.TextureUsage.texture_binding | wgpu.TextureUsage.copy_dst | wgpu.TextureUsage.storage_binding,
+        .label = wgpu.StringView.fromSlice("Texture"),
+        .usage = wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_dst | wgpu.TextureUsages.storage_binding,
         .format = .rgba8_unorm,
         .mip_level_count = wgfx.Texture.getMaxNumLevels(@intCast(texData[0].len), @intCast(texData.len), 1),
         .size = .{
@@ -196,9 +197,9 @@ pub fn main() !void {
 
                 wgfx.deinitObj(&depthTexture);
                 depthTexture = wgfx.Texture.createFromDesc(&device, &wgpu.TextureDescriptor{
-                    .label = "Depth",
+                    .label = wgpu.StringView.fromSlice("Depth"),
                     .format = depthStencilFormat,
-                    .usage = wgpu.TextureUsage.render_attachment,
+                    .usage = wgpu.TextureUsages.render_attachment,
                     .size = .{.width = @intCast(width), .height = @intCast(height), },
                 });
             },

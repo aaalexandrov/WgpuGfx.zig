@@ -4,6 +4,8 @@ const wgpu = @import("wgpu");
 const devi = @import("device.zig");
 const Device = devi.Device;
 
+const util = @import("util.zig");
+
 pub const ShaderPipeline = union(enum) {
     render: *wgpu.RenderPipeline,
     compute: *wgpu.ComputePipeline,
@@ -21,31 +23,36 @@ pub const ShaderPipeline = union(enum) {
 pub const Shader = struct {
     module: *wgpu.ShaderModule,
     pipeline: ShaderPipeline,
-    name: [:0]const u8,
+    name: []const u8,
     device: *Device,
 
     const Self = @This();
 
-    pub fn createFromObjects(device: *Device, module: *wgpu.ShaderModule, pipeline: ShaderPipeline, name: [:0]const u8) Shader {
+    pub fn createFromObjects(device: *Device, module: *wgpu.ShaderModule, pipeline: ShaderPipeline, name: []const u8) Shader {
         return .{
             .module = module,
             .pipeline = pipeline,
-            .name = device.alloc.dupeZ(u8, name) catch unreachable,
+            .name = device.alloc.dupe(u8, name) catch unreachable,
             .device = device,
         };
     }
 
     pub fn createRenderingFromDesc(device: *Device, desc: *const wgpu.RenderPipelineDescriptor) Shader {
-        return createFromObjects(device, desc.vertex.module, .{ .render = device.device.createRenderPipeline(desc).? }, if (desc.label) |label| label[0..std.mem.len(label) :0] else "");
+        return createFromObjects(
+            device, 
+            desc.vertex.module, 
+            .{ .render = device.device.createRenderPipeline(desc).? }, 
+            if (desc.label.toSlice()) |label| label else "",
+        );
     }
 
-    pub fn createRendering(device: *Device, filename: [:0]const u8, vertexBuffers: []const wgpu.VertexBufferLayout, depthStencil: ?*const wgpu.DepthStencilState, colorTargets: []const wgpu.ColorTargetState) !Shader {
+    pub fn createRendering(device: *Device, filename: []const u8, vertexBuffers: []const wgpu.VertexBufferLayout, depthStencil: ?*const wgpu.DepthStencilState, colorTargets: []const wgpu.ColorTargetState) !Shader {
         const module = try loadModule(device, filename);
         return createRenderingFromDesc(device, &wgpu.RenderPipelineDescriptor{
-            .label = filename,
+            .label = wgpu.StringView.fromSlice(filename), 
             .vertex = .{
                 .module = module,
-                .entry_point = "vs_main",
+                .entry_point = wgpu.StringView.fromSlice("vs_main"),
                 .buffer_count = vertexBuffers.len,
                 .buffers = vertexBuffers.ptr,
             },
@@ -54,7 +61,7 @@ pub const Shader = struct {
             .depth_stencil = depthStencil,
             .fragment = &wgpu.FragmentState{
                 .module = module,
-                .entry_point = "fs_main",
+                .entry_point = wgpu.StringView.fromSlice("fs_main"),
                 .target_count = colorTargets.len,
                 .targets = colorTargets.ptr,
             },
@@ -62,29 +69,33 @@ pub const Shader = struct {
     }
 
     pub fn createComputeFromDesc(device: *Device, desc: *const wgpu.ComputePipelineDescriptor) Shader {
-        return createFromObjects(device, desc.compute.module, .{ .compute = device.device.createComputePipeline(desc).? }, if (desc.label) |label| label[0..std.mem.len(label) :0] else "");
+        return createFromObjects(
+            device,
+            desc.compute.module,
+            .{ .compute = device.device.createComputePipeline(desc).? },
+            if (desc.label.toSlice()) |label| label else "");
     }
 
-    pub fn createCompute(device: *Device, filename: [:0]const u8) !Shader {
+    pub fn createCompute(device: *Device, filename: []const u8) !Shader {
         const module = try loadModule(device, filename);
         return createComputeFromDesc(device, &wgpu.ComputePipelineDescriptor{
-            .label = filename,
+            .label = wgpu.StringView.fromSlice(filename),
             .compute = .{
                 .module = module,
-                .entry_point = "cs_main",
+                .entry_point = wgpu.StringView.fromSlice("cs_main"),
             },
         });
     }
 
-    pub fn loadModule(device: *Device, filename: [*:0]const u8) !*wgpu.ShaderModule {
-        const file = try std.fs.cwd().openFileZ(filename, .{});
+    pub fn loadModule(device: *Device, filename: []const u8) !*wgpu.ShaderModule {
+        const file = try std.fs.cwd().openFile(filename, .{});
         const content = try file.readToEndAllocOptions(device.alloc, std.math.maxInt(i32), null, @alignOf(u8), 0);
         defer device.alloc.free(content);
         return device.device.createShaderModule(&wgpu.ShaderModuleDescriptor{
-            .next_in_chain = @ptrCast(&wgpu.ShaderModuleWGSLDescriptor{
-                .code = content,
+            .next_in_chain = @ptrCast(&wgpu.ShaderSourceWGSL{
+                .code = wgpu.StringView.fromSlice(content),
             }),
-            .label = filename,
+            .label = wgpu.StringView.fromSlice(filename),
         }).?;
     }
 
@@ -100,18 +111,18 @@ pub const Shader = struct {
         };
     }
 
-    pub fn createBindGroupFromEntries(self: *Self, name: [:0]const u8, groupIndex: u32, entries: []const wgpu.BindGroupEntry) ?*wgpu.BindGroup {
+    pub fn createBindGroupFromEntries(self: *Self, name: []const u8, groupIndex: u32, entries: []const wgpu.BindGroupEntry) ?*wgpu.BindGroup {
         const groupLayout = self.getBindGroupLayout(groupIndex) orelse return null;
         defer groupLayout.release();
         return self.device.device.createBindGroup(&wgpu.BindGroupDescriptor{
-            .label = name,
+            .label = wgpu.StringView.fromSlice(name),
             .layout = groupLayout,
             .entry_count = entries.len,
             .entries = entries.ptr,
         });
     }
 
-    pub fn createBindGroup(self: *Self, name: [:0]const u8, groupIndex: u32, args: anytype) ?*wgpu.BindGroup {
+    pub fn createBindGroup(self: *Self, name: []const u8, groupIndex: u32, args: anytype) ?*wgpu.BindGroup {
         var entries: [args.len]wgpu.BindGroupEntry = undefined;
         inline for (args, 0..) |arg, i| {
             entries[i] = .{

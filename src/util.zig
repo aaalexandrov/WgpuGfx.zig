@@ -28,9 +28,9 @@ pub fn deinitObj(ptr: anytype) void {
     }
 }
 
-pub fn copyNameFromDescLabel(desc: anytype, alloc: std.mem.Allocator) [:0]const u8 {
-    return if (desc.label) |label| blk: {
-        const len = std.mem.len(label);
-        break :blk (alloc.dupeZ(u8, label[0..len]) catch unreachable)[0..len :0];
-    } else "";
+pub fn copyNameFromDescLabel(desc: anytype, alloc: std.mem.Allocator) []const u8 {
+    return if (desc.label.toSlice()) |label| 
+        alloc.dupe(u8, label) catch unreachable
+    else 
+        "";
 }
