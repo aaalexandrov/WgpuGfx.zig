@@ -4,31 +4,32 @@ const wgpu = @import("wgpu");
 const devi = @import("device.zig");
 const Device = devi.Device;
 
+const handles = @import("handles.zig");
 const util = @import("util.zig");
 
 pub const ShaderPipeline = union(enum) {
-    render: *wgpu.RenderPipeline,
-    compute: *wgpu.ComputePipeline,
+    render: handles.RenderPipeline,
+    compute: handles.ComputePipeline,
 
     const Self = @This();
 
     pub fn release(self: *Self) void {
         switch (self.*) {
-            .render => |render| render.release(),
-            .compute => |compute| compute.release(),
+            .render => |render| wgpu.wgpuRenderPipelineRelease(render),
+            .compute => |compute| wgpu.wgpuComputePipelineRelease(compute),
         }
     }
 };
 
 pub const Shader = struct {
-    module: *wgpu.ShaderModule,
+    module: handles.ShaderModule,
     pipeline: ShaderPipeline,
     name: []const u8,
     device: *Device,
 
     const Self = @This();
 
-    pub fn createFromObjects(device: *Device, module: *wgpu.ShaderModule, pipeline: ShaderPipeline, name: []const u8) Shader {
+    pub fn createFromObjects(device: *Device, module: handles.ShaderModule, pipeline: ShaderPipeline, name: []const u8) Shader {
         return .{
             .module = module,
             .pipeline = pipeline,
@@ -37,57 +38,71 @@ pub const Shader = struct {
         };
     }
 
-    pub fn createRenderingFromDesc(device: *Device, desc: *const wgpu.RenderPipelineDescriptor) Shader {
+    pub fn createRenderingFromDesc(device: *Device, desc: *const wgpu.WGPURenderPipelineDescriptor) Shader {
         return createFromObjects(
-            device, 
-            desc.vertex.module, 
-            .{ .render = device.device.createRenderPipeline(desc).? }, 
-            if (desc.label.toSlice()) |label| label else "",
+            device,
+            desc.vertex.module.?,
+            .{ .render = device.device.wgpuDeviceCreateRenderPipeline(desc) orelse
+                @panic("wgpuDeviceCreateRenderPipeline failed") },
+            handles.stringSlice(desc.label) orelse "",
         );
     }
 
-    pub fn createRendering(device: *Device, filename: []const u8, vertexBuffers: []const wgpu.VertexBufferLayout, depthStencil: ?*const wgpu.DepthStencilState, colorTargets: []const wgpu.ColorTargetState) !Shader {
+    pub fn createRendering(
+        device: *Device,
+        filename: []const u8,
+        vertexBuffers: []const wgpu.WGPUVertexBufferLayout,
+        depthStencil: ?*const wgpu.WGPUDepthStencilState,
+        colorTargets: []const wgpu.WGPUColorTargetState,
+    ) !Shader {
         const module = try loadModule(device, filename);
-        return createRenderingFromDesc(device, &wgpu.RenderPipelineDescriptor{
-            .label = wgpu.StringView.fromSlice(filename), 
+        // translate-C defaults every C enum to 0 (`Undefined`), which wgpu rejects,
+        // so the states the bindings used to default are filled in here.
+        return createRenderingFromDesc(device, &.{
+            .label = handles.stringView(filename),
             .vertex = .{
                 .module = module,
-                .entry_point = wgpu.StringView.fromSlice("vs_main"),
-                .buffer_count = vertexBuffers.len,
+                .entryPoint = handles.stringView("vs_main"),
+                .bufferCount = vertexBuffers.len,
                 .buffers = vertexBuffers.ptr,
             },
-            .primitive = .{},
-            .multisample = .{},
-            .depth_stencil = depthStencil,
-            .fragment = &wgpu.FragmentState{
+            .primitive = .{
+                .topology = wgpu.WGPUPrimitiveTopology_TriangleList,
+                .frontFace = wgpu.WGPUFrontFace_CCW,
+                .cullMode = wgpu.WGPUCullMode_None,
+            },
+            .multisample = .{ .count = 1, .mask = 0xFFFFFFFF },
+            .depthStencil = depthStencil,
+            .fragment = &.{
                 .module = module,
-                .entry_point = wgpu.StringView.fromSlice("fs_main"),
-                .target_count = colorTargets.len,
+                .entryPoint = handles.stringView("fs_main"),
+                .targetCount = colorTargets.len,
                 .targets = colorTargets.ptr,
             },
         });
     }
 
-    pub fn createComputeFromDesc(device: *Device, desc: *const wgpu.ComputePipelineDescriptor) Shader {
+    pub fn createComputeFromDesc(device: *Device, desc: *const wgpu.WGPUComputePipelineDescriptor) Shader {
         return createFromObjects(
             device,
-            desc.compute.module,
-            .{ .compute = device.device.createComputePipeline(desc).? },
-            if (desc.label.toSlice()) |label| label else "");
+            desc.compute.module.?,
+            .{ .compute = device.device.wgpuDeviceCreateComputePipeline(desc) orelse
+                @panic("wgpuDeviceCreateComputePipeline failed") },
+            handles.stringSlice(desc.label) orelse "",
+        );
     }
 
     pub fn createCompute(device: *Device, filename: []const u8) !Shader {
         const module = try loadModule(device, filename);
-        return createComputeFromDesc(device, &wgpu.ComputePipelineDescriptor{
-            .label = wgpu.StringView.fromSlice(filename),
+        return createComputeFromDesc(device, &.{
+            .label = handles.stringView(filename),
             .compute = .{
                 .module = module,
-                .entry_point = wgpu.StringView.fromSlice("cs_main"),
+                .entryPoint = handles.stringView("cs_main"),
             },
         });
     }
-
-    pub fn loadModule(device: *Device, filename: []const u8) !*wgpu.ShaderModule {
+    pub fn loadModule(device: *Device, filename: []const u8) !handles.ShaderModule {
         // Zig 0.17: file I/O goes through an Io implementation (`std.Io.Threaded` by default).
         const content = try std.Io.Dir.cwd().readFileAlloc(
             device.io,
@@ -96,47 +111,59 @@ pub const Shader = struct {
             .limited(std.math.maxInt(u32)),
         );
         defer device.alloc.free(content);
-        return device.device.createShaderModule(&wgpu.ShaderModuleDescriptor{
-            .next_in_chain = @ptrCast(&wgpu.ShaderSourceWGSL{
-                .code = wgpu.StringView.fromSlice(content),
-            }),
-            .label = wgpu.StringView.fromSlice(filename),
-        }).?;
+
+        const wgsl = wgpu.WGPUShaderSourceWGSL{
+            .chain = .{ .sType = wgpu.WGPUSType_ShaderSourceWGSL },
+            .code = handles.stringView(content),
+        };
+        var desc = wgpu.WGPUShaderModuleDescriptor{
+            .nextInChain = @constCast(&wgsl.chain),
+            .label = handles.stringView(filename),
+        };
+        return device.device.wgpuDeviceCreateShaderModule(&desc) orelse error.ShaderModuleFailed;
     }
 
     pub fn deinit(self: *Self) void {
         self.pipeline.release();
-        self.module.release();
+        wgpu.wgpuShaderModuleRelease(self.module);
         self.device.alloc.free(self.name);
     }
 
-    pub fn getBindGroupLayout(self: *Self, groupIndex: u32) ?*wgpu.BindGroupLayout {
+    pub fn getBindGroupLayout(self: *Self, groupIndex: u32) ?handles.BindGroupLayout {
         return switch (self.pipeline) {
-            inline else => |pipe| pipe.getBindGroupLayout(groupIndex),
+            .render => |pipe| pipe.wgpuRenderPipelineGetBindGroupLayout(groupIndex),
+            .compute => |pipe| pipe.wgpuComputePipelineGetBindGroupLayout(groupIndex),
         };
     }
 
-    pub fn createBindGroupFromEntries(self: *Self, name: []const u8, groupIndex: u32, entries: []const wgpu.BindGroupEntry) ?*wgpu.BindGroup {
+    pub fn createBindGroupFromEntries(self: *Self, name: []const u8, groupIndex: u32, entries: []wgpu.WGPUBindGroupEntry) ?handles.BindGroup {
         const groupLayout = self.getBindGroupLayout(groupIndex) orelse return null;
-        defer groupLayout.release();
-        return self.device.device.createBindGroup(&wgpu.BindGroupDescriptor{
-            .label = wgpu.StringView.fromSlice(name),
+        defer wgpu.wgpuBindGroupLayoutRelease(groupLayout);
+
+        // wgpu-native panics on `size == 0` for buffer entries; the sentinel for
+        // "the whole buffer" is `WGPU_WHOLE_SIZE`.
+        for (entries) |*entry| {
+            if (entry.buffer != null and entry.size == 0) entry.size = wgpu.WGPU_WHOLE_SIZE;
+        }
+
+        return self.device.device.wgpuDeviceCreateBindGroup(&.{
+            .label = handles.stringView(name),
             .layout = groupLayout,
-            .entry_count = entries.len,
+            .entryCount = entries.len,
             .entries = entries.ptr,
         });
     }
 
-    pub fn createBindGroup(self: *Self, name: []const u8, groupIndex: u32, args: anytype) ?*wgpu.BindGroup {
-        var entries: [args.len]wgpu.BindGroupEntry = undefined;
+    pub fn createBindGroup(self: *Self, name: []const u8, groupIndex: u32, args: anytype) ?handles.BindGroup {
+        var entries: [args.len]wgpu.WGPUBindGroupEntry = undefined;
         inline for (args, 0..) |arg, i| {
             entries[i] = .{
                 .binding = @intCast(i),
             };
             switch (@TypeOf(arg)) {
-                *wgpu.Buffer => entries[i].buffer = arg,
-                *wgpu.Sampler => entries[i].sampler = arg,
-                *wgpu.TextureView => entries[i].texture_view = arg,
+                handles.Buffer => entries[i].buffer = arg,
+                handles.Sampler => entries[i].sampler = arg,
+                handles.TextureView => entries[i].textureView = arg,
                 else => unreachable,
             }
         }
@@ -144,54 +171,54 @@ pub const Shader = struct {
     }
 };
 
-pub fn getVertexFormat(comptime T: type) wgpu.VertexFormat {
+pub fn getVertexFormat(comptime T: type) wgpu.WGPUVertexFormat {
     return switch (T) {
-        f32 => wgpu.VertexFormat.float32,
-        [2]f32 => wgpu.VertexFormat.float32x2,
-        [3]f32 => wgpu.VertexFormat.float32x3,
-        [4]f32 => wgpu.VertexFormat.float32x4,
+        f32 => wgpu.WGPUVertexFormat_Float32,
+        [2]f32 => wgpu.WGPUVertexFormat_Float32x2,
+        [3]f32 => wgpu.WGPUVertexFormat_Float32x3,
+        [4]f32 => wgpu.WGPUVertexFormat_Float32x4,
 
-        u32 => wgpu.VertexFormat.uint32,
-        [2]u32 => wgpu.VertexFormat.uint32x2,
-        [3]u32 => wgpu.VertexFormat.uint32x3,
-        [4]u32 => wgpu.VertexFormat.uint32x4,
+        u32 => wgpu.WGPUVertexFormat_Uint32,
+        [2]u32 => wgpu.WGPUVertexFormat_Uint32x2,
+        [3]u32 => wgpu.WGPUVertexFormat_Uint32x3,
+        [4]u32 => wgpu.WGPUVertexFormat_Uint32x4,
 
-        i32 => wgpu.VertexFormat.sint32,
-        [2]i32 => wgpu.VertexFormat.sint32x2,
-        [3]i32 => wgpu.VertexFormat.sint32x3,
-        [4]i32 => wgpu.VertexFormat.sint32x4,
+        i32 => wgpu.WGPUVertexFormat_Sint32,
+        [2]i32 => wgpu.WGPUVertexFormat_Sint32x2,
+        [3]i32 => wgpu.WGPUVertexFormat_Sint32x3,
+        [4]i32 => wgpu.WGPUVertexFormat_Sint32x4,
 
-        [2]u8 => wgpu.VertexFormat.uint8x2,
-        [4]u8 => wgpu.VertexFormat.uint8x4,
-        @Vector(2, u8) => wgpu.VertexFormat.unorm8x2,
-        @Vector(4, u8) => wgpu.VertexFormat.unorm8x4,
+        [2]u8 => wgpu.WGPUVertexFormat_Uint8x2,
+        [4]u8 => wgpu.WGPUVertexFormat_Uint8x4,
+        @Vector(2, u8) => wgpu.WGPUVertexFormat_Unorm8x2,
+        @Vector(4, u8) => wgpu.WGPUVertexFormat_Unorm8x4,
 
-        [2]i8 => wgpu.VertexFormat.sint8x2,
-        [4]i8 => wgpu.VertexFormat.sint8x4,
-        @Vector(2, i8) => wgpu.VertexFormat.snorm8x2,
-        @Vector(4, i8) => wgpu.VertexFormat.snorm8x4,
+        [2]i8 => wgpu.WGPUVertexFormat_Sint8x2,
+        [4]i8 => wgpu.WGPUVertexFormat_Sint8x4,
+        @Vector(2, i8) => wgpu.WGPUVertexFormat_Snorm8x2,
+        @Vector(4, i8) => wgpu.WGPUVertexFormat_Snorm8x4,
 
-        [2]u16 => wgpu.VertexFormat.uint16x2,
-        [4]u16 => wgpu.VertexFormat.uint16x4,
-        @Vector(2, u16) => wgpu.VertexFormat.unorm16x2,
-        @Vector(4, u16) => wgpu.VertexFormat.unorm16x4,
+        [2]u16 => wgpu.WGPUVertexFormat_Uint16x2,
+        [4]u16 => wgpu.WGPUVertexFormat_Uint16x4,
+        @Vector(2, u16) => wgpu.WGPUVertexFormat_Unorm16x2,
+        @Vector(4, u16) => wgpu.WGPUVertexFormat_Unorm16x4,
 
-        [2]i16 => wgpu.VertexFormat.sint16x2,
-        [4]i16 => wgpu.VertexFormat.sint16x4,
-        @Vector(2, i16) => wgpu.VertexFormat.snorm16x2,
-        @Vector(4, i16) => wgpu.VertexFormat.snorm16x4,
+        [2]i16 => wgpu.WGPUVertexFormat_Sint16x2,
+        [4]i16 => wgpu.WGPUVertexFormat_Sint16x4,
+        @Vector(2, i16) => wgpu.WGPUVertexFormat_Snorm16x2,
+        @Vector(4, i16) => wgpu.WGPUVertexFormat_Snorm16x4,
 
         else => unreachable,
     };
 }
 
-pub fn getVertexAttributes(comptime T: type) [vertexFieldCount(T)]wgpu.VertexAttribute {
-    var attrs: [vertexFieldCount(T)]wgpu.VertexAttribute = undefined;
+pub fn getVertexAttributes(comptime T: type) [vertexFieldCount(T)]wgpu.WGPUVertexAttribute {
+    var attrs: [vertexFieldCount(T)]wgpu.WGPUVertexAttribute = undefined;
     inline for (vertexFieldNames(T), vertexFieldTypes(T), 0..) |name, field_type, i| {
         attrs[i] = .{
             .format = getVertexFormat(field_type),
             .offset = @offsetOf(T, name),
-            .shader_location = i,
+            .shaderLocation = i,
         };
     }
     return attrs;
@@ -211,21 +238,50 @@ fn vertexFieldCount(comptime T: type) usize {
     return @typeInfo(T).@"struct".field_names.len;
 }
 
-pub fn getVertexBufferLayout(comptime T: type) wgpu.VertexBufferLayout {
+pub fn getVertexBufferLayout(comptime T: type) wgpu.WGPUVertexBufferLayout {
     const attrs = struct {
         const attr = getVertexAttributes(T);
     };
-    return wgpu.VertexBufferLayout{
-        .array_stride = @sizeOf(T),
-        .attribute_count = attrs.attr.len,
+    return .{
+        .arrayStride = @sizeOf(T),
+        .attributeCount = attrs.attr.len,
         .attributes = &attrs.attr,
     };
 }
 
-pub fn getIndexFormat(comptime T: type) wgpu.IndexFormat {
+pub fn getIndexFormat(comptime T: type) wgpu.WGPUIndexFormat {
     return switch (T) {
-        u16 => wgpu.IndexFormat.uint16,
-        u32 => wgpu.IndexFormat.uint32,
+        u16 => wgpu.WGPUIndexFormat_Uint16,
+        u32 => wgpu.WGPUIndexFormat_Uint32,
         else => unreachable,
     };
 }
+
+/// `wgpu-native` has no preset blend states; these mirror `wgpu-types`.
+pub const BlendStates = struct {
+    pub const alpha_blending = wgpu.WGPUBlendState{
+        .color = .{
+            .operation = wgpu.WGPUBlendOperation_Add,
+            .srcFactor = wgpu.WGPUBlendFactor_SrcAlpha,
+            .dstFactor = wgpu.WGPUBlendFactor_OneMinusSrcAlpha,
+        },
+        .alpha = .{
+            .operation = wgpu.WGPUBlendOperation_Add,
+            .srcFactor = wgpu.WGPUBlendFactor_One,
+            .dstFactor = wgpu.WGPUBlendFactor_OneMinusSrcAlpha,
+        },
+    };
+
+    pub const premultiplied_alpha_blending = wgpu.WGPUBlendState{
+        .color = alpha_blending.alpha,
+        .alpha = alpha_blending.alpha,
+    };
+};
+
+/// Stencil faces default to "always/keep" instead of translate-C's zero (`Undefined`).
+pub const defaultStencilFace = wgpu.WGPUStencilFaceState{
+    .compare = wgpu.WGPUCompareFunction_Always,
+    .failOp = wgpu.WGPUStencilOperation_Keep,
+    .depthFailOp = wgpu.WGPUStencilOperation_Keep,
+    .passOp = wgpu.WGPUStencilOperation_Keep,
+};

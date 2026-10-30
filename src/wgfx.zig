@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const handles = @import("handles.zig");
+
 pub const util = @import("util.zig");
 pub const deinitObj = util.deinitObj;
 pub const releaseObj = util.releaseObj;
@@ -17,6 +19,8 @@ pub const getVertexAttributes = shader.getVertexAttributes;
 pub const getVertexBufferLayout = shader.getVertexBufferLayout;
 pub const getVertexFormat = shader.getVertexFormat;
 pub const getIndexFormat = shader.getIndexFormat;
+pub const BlendStates = shader.BlendStates;
+pub const defaultStencilFace = shader.defaultStencilFace;
 
 pub const resources = @import("resources.zig");
 pub const Buffer = resources.Buffer;

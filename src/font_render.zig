@@ -3,6 +3,7 @@ const wgpu = @import("wgpu");
 const zm = @import("zmath");
 
 const wgfx = @import("wgfx.zig");
+const wgpuHandles = @import("handles.zig");
 
 pub const FontUniforms = extern struct {
     worldViewProj: [4][4]f32 = @bitCast(zm.identity()),
@@ -20,7 +21,7 @@ pub const FontRender = struct {
     sampler: *wgfx.Sampler,
     alloc: std.mem.Allocator,
     vertices: std.ArrayList(VertexStruct),
-    bindGroup: *wgpu.BindGroup = undefined,
+    bindGroup: wgpuHandles.BindGroup = undefined,
     uniformBuffer: wgfx.Buffer,
     vertexBuffer: wgfx.Buffer,
     indexBuffer: wgfx.Buffer,
@@ -52,17 +53,17 @@ pub const FontRender = struct {
             .sampler = sampler,
             .alloc = device.alloc,
             .vertices = std.ArrayList(VertexStruct).initCapacity(device.alloc, maxChars * 4) catch unreachable,
-            .uniformBuffer = .createFromDesc(device, &wgpu.BufferDescriptor{
-                .label = wgpu.StringView.fromSlice("FontUniforms"),
-                .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
+            .uniformBuffer = .createFromDesc(device, &.{
+                .label = wgpuHandles.stringView("FontUniforms"),
+                .usage = wgpu.WGPUBufferUsage_Uniform | wgpu.WGPUBufferUsage_CopyDst,
                 .size = @sizeOf(UniformStruct),
             }),
-            .vertexBuffer = .createFromDesc(device, &wgpu.BufferDescriptor{
-                .label = wgpu.StringView.fromSlice("FontVertices"),
-                .usage = wgpu.BufferUsages.vertex | wgpu.BufferUsages.copy_dst,
+            .vertexBuffer = .createFromDesc(device, &.{
+                .label = wgpuHandles.stringView("FontVertices"),
+                .usage = wgpu.WGPUBufferUsage_Vertex | wgpu.WGPUBufferUsage_CopyDst,
                 .size = @sizeOf(VertexStruct) * maxChars * 4,
             }),
-            .indexBuffer = .create(device, "FontIndices", wgpu.BufferUsages.index, std.mem.sliceAsBytes(&indices)),
+            .indexBuffer = .create(device, "FontIndices", wgpu.WGPUBufferUsage_Index, std.mem.sliceAsBytes(&indices)),
         };
         fontRender.bindGroup = shader.createBindGroup("FontBinds", 0, .{
             fontRender.uniformBuffer.buffer,
@@ -73,7 +74,7 @@ pub const FontRender = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.bindGroup.release();
+        wgpu.wgpuBindGroupRelease(self.bindGroup);
         self.indexBuffer.deinit();
         self.vertexBuffer.deinit();
         self.uniformBuffer.deinit();
@@ -132,14 +133,14 @@ pub const FontRender = struct {
         }
     }
 
-    pub fn render(self: *Self, renderPass: *wgpu.RenderPassEncoder, targetSize: Coord) void {
+    pub fn render(self: *Self, renderPass: wgpuHandles.RenderPassEncoder, targetSize: Coord) void {
         self.update(targetSize);
         if (self.currentNumChars > 0) {
-            renderPass.setPipeline(self.shader.pipeline.render);
-            renderPass.setVertexBuffer(0, self.vertexBuffer.buffer, 0, self.currentNumChars * 4 * @sizeOf(VertexStruct));
-            renderPass.setIndexBuffer(self.indexBuffer.buffer, wgfx.getIndexFormat(IndexType), 0, self.currentNumChars * 6 * @sizeOf(IndexType));
-            renderPass.setBindGroup(0, self.bindGroup, 0, null);
-            renderPass.drawIndexed(self.currentNumChars * 6, 1, 0, 0, 0);
+            renderPass.wgpuRenderPassEncoderSetPipeline(self.shader.pipeline.render);
+            renderPass.wgpuRenderPassEncoderSetVertexBuffer(0, self.vertexBuffer.buffer, 0, self.currentNumChars * 4 * @sizeOf(VertexStruct));
+            renderPass.wgpuRenderPassEncoderSetIndexBuffer(self.indexBuffer.buffer, wgfx.getIndexFormat(IndexType), 0, self.currentNumChars * 6 * @sizeOf(IndexType));
+            renderPass.wgpuRenderPassEncoderSetBindGroup(0, self.bindGroup, 0, null);
+            renderPass.wgpuRenderPassEncoderDrawIndexed(self.currentNumChars * 6, 1, 0, 0, 0);
         }
     }
 };

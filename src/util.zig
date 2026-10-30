@@ -1,4 +1,5 @@
 const std = @import("std");
+const handles = @import("handles.zig");
 
 pub const IntegerRange = struct { start: usize, end: usize };
 
@@ -20,9 +21,12 @@ pub fn findFirstInteger(str: []const u8) []const u8 {
     return if (findFirstIntegerRange(str)) |r| str[r.start..r.end] else "";
 }
 
-pub fn releaseObj(ptr: anytype) void {
-    if (ptr.*) |*obj| {
-        obj.*.release();
+/// Release a raw wgpu handle and clear the owning optional.
+/// The release function is passed explicitly because the C API names it per type
+/// (`wgpuBufferRelease`, `wgpuTextureViewRelease`, ...).
+pub fn releaseObj(release: anytype, ptr: anytype) void {
+    if (ptr.*) |obj| {
+        release(obj);
         ptr.* = null;
     }
 }
@@ -35,8 +39,8 @@ pub fn deinitObj(ptr: anytype) void {
 }
 
 pub fn copyNameFromDescLabel(desc: anytype, alloc: std.mem.Allocator) []const u8 {
-    return if (desc.label.toSlice()) |label| 
+    return if (handles.stringSlice(desc.label)) |label|
         alloc.dupe(u8, label) catch unreachable
-    else 
+    else
         "";
 }

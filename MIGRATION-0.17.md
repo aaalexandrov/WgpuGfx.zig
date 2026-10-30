@@ -6,6 +6,11 @@ Status: `zig build`, `zig build test` and `zig build -Doptimize=...` succeed on
 `x86_64-linux-gnu`; the demo window opens, renders (Vulkan / NVIDIA RTX 5070 Ti)
 and exits without leak reports from the debug allocator.
 
+> Superseded for the wgpu layer: the follow-up branch `raw-c-import` deletes
+> `deps/wgpu_native_zig` entirely and imports `webgpu.h`/`wgpu.h` with translate-C on
+> wgpu-native 29.0.1.1. See `MIGRATION-RAW-C-IMPORT.md`. Everything below documents the
+> `upgrade-0.17` step as it was done.
+
 ## Dependencies after the upgrade
 
 | dep | before | after |
@@ -132,3 +137,17 @@ The fork is now fully 0.17-clean (its own `zig build`, `zig build test`,
 * Consider replacing the vendored fork's busy-wait in `requestAdapterSync/requestDeviceSync`
   with `wgpuInstanceWaitAny`.
 * Debug binary is ~161 MB and ReleaseFast ~100 MB because the static `libwgpu_native.a` is linked in.
+
+## Update: resolved on the `raw-c-import` branch
+
+* wgpu-native is no longer pinned to 25.0.2.1 — the bindings are gone and the headers are
+  translated directly, on **29.0.1.1** (`MIGRATION-RAW-C-IMPORT.md`).
+* `Unrecognized present mode 1000361000` disappeared: the bindings' `PresentMode` numbers
+  were Rust-internal values, now replaced by the real `WGPUPresentMode_*` constants.
+* `wgpuInstanceWaitAny` is *not* usable — it is `unimplemented!()` in wgpu-native 25 **and**
+  29; the busy-wait on `wgpuInstanceProcessEvents` stays (with
+  `WGPUCallbackMode_AllowProcessEvents`).
+* Binary size grew a little (debug ~152 MB) because the whole translated header API plus the
+  static `libwgpu_native.a` is linked; `-Dwgpu-link-mode=dynamic` links the shipped
+  `libwgpu_native.so` instead.
+* `src/math.zig` (unused, 598 lines) was deleted.

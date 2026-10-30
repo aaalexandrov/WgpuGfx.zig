@@ -33,10 +33,24 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
+    // webgpu.h + wgpu.h translated to Zig by translate-C, already wired to the
+    // prebuilt libwgpu_native archive for the selected target (see deps/wgpu_native).
+    const wgpu_native = b.dependency("wgpu_native", .{});
+    exe_mod.addImport("wgpu", wgpu_native.module("wgpu"));
+
+    // Linking flags live on the module in Zig 0.17. `msvc` archives pull in their own
+    // C++ runtime and static libs; see deps/wgpu_native/build.zig.
+    if (target.result.abi != .msvc) {
+        exe_mod.link_libc = true;
+        exe_mod.link_libcpp = true;
+    }
+
     // The prebuilt wgpu-native *release* archives reference the undefined-behaviour
     // sanitizer runtime. Zig only bundles it automatically in Debug, so ReleaseSafe/Fast
-    // builds need it explicitly or ld fails on __ubsan_handle_*.
-    exe.bundle_ubsan_rt = true;
+    // builds need it explicitly or ld fails on __ubsan_handle_*. msvc archives already
+    // ship it, and bundling again gives duplicate symbols.
+    if (target.result.abi != .msvc)
+        exe.bundle_ubsan_rt = true;
 
     const zglfw = b.dependency("zglfw", .{});
     exe.root_module.addImport("zglfw", zglfw.module("root"));
@@ -44,9 +58,6 @@ pub fn build(b: *std.Build) void {
     if (target.result.os.tag != .emscripten) {
         exe.root_module.linkLibrary(zglfw.artifact("glfw"));
     }
-
-    const wgpu_native_dep = b.dependency("wgpu_native_zig", .{});
-    exe.root_module.addImport("wgpu", wgpu_native_dep.module("wgpu"));
 
     const zmath = b.dependency("zmath", .{});
     exe.root_module.addImport("zmath", zmath.module("root"));

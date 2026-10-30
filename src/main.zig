@@ -5,6 +5,7 @@ const zm = @import("zmath");
 const zstbi = @import("zstbi");
 
 const wgfx = @import("wgfx.zig");
+const handles = wgfx.handles;
 const font = @import("font_render.zig");
 
 const PlainUniforms = extern struct {
@@ -41,6 +42,8 @@ pub fn main(init: std.process.Init) !void {
     defer glfw.terminate();
 
     const windowName = "Wgpu Gfx";
+    // Without this GLFW asks Wayland for an EGL surface and wgpu's Vulkan WSI
+    // then refuses to configure the surface.
     glfw.windowHint(.client_api, .no_api);
     const window = try glfw.Window.create(600, 600, windowName, null, null);
     defer window.destroy();
@@ -50,61 +53,70 @@ pub fn main(init: std.process.Init) !void {
 
     device.init(&surface);
 
-    const depthStencilFormat = wgpu.TextureFormat.depth32_float;
+    const depthStencilFormat = wgpu.WGPUTextureFormat_Depth32Float;
 
-    var plainShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.VertexBufferLayout{
+    var plainShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.WGPUVertexBufferLayout{
             wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
         },
-        &wgpu.DepthStencilState {
+        &wgpu.WGPUDepthStencilState{
             .format = depthStencilFormat,
-            .depth_write_enabled = .true,
-            .depth_compare = .less,
-            .stencil_front = .{},
-            .stencil_back = .{},
-        }, 
-        &[_]wgpu.ColorTargetState{
-            .{ .format = surface.format, },
-        }
+            .depthWriteEnabled = wgpu.WGPUOptionalBool_True,
+            .depthCompare = wgpu.WGPUCompareFunction_Less,
+            .stencilReadMask = 0xFFFFFFFF,
+            .stencilWriteMask = 0xFFFFFFFF,
+            .stencilFront = wgfx.defaultStencilFace,
+            .stencilBack = wgfx.defaultStencilFace,
+        },
+        &[_]wgpu.WGPUColorTargetState{
+            .{
+                .format = surface.format,
+                .writeMask = wgpu.WGPUColorWriteMask_All,
+            },
+        },
     );
     defer plainShader.deinit();
 
-    var fontShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.VertexBufferLayout{
+    var fontShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.WGPUVertexBufferLayout{
             wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
         },
-        &wgpu.DepthStencilState {
+        &wgpu.WGPUDepthStencilState{
             .format = depthStencilFormat,
-            .depth_write_enabled = .false,
-            .depth_compare = .always,
-            .stencil_front = .{},
-            .stencil_back = .{},
-        }, 
-        &[_]wgpu.ColorTargetState{
+            .depthWriteEnabled = wgpu.WGPUOptionalBool_False,
+            .depthCompare = wgpu.WGPUCompareFunction_Always,
+            .stencilReadMask = 0xFFFFFFFF,
+            .stencilWriteMask = 0xFFFFFFFF,
+            .stencilFront = wgfx.defaultStencilFace,
+            .stencilBack = wgfx.defaultStencilFace,
+        },
+        &[_]wgpu.WGPUColorTargetState{
             .{
                 .format = surface.format,
-                .blend = &wgpu.BlendState.alpha_blending,
+                .blend = &wgfx.BlendStates.alpha_blending,
+                .writeMask = wgpu.WGPUColorWriteMask_All,
             },
-        }
+        },
     );
     defer fontShader.deinit();
 
-    var plainVerticesBuffer = wgfx.Buffer.create(&device, "PlainVertices", wgpu.BufferUsages.vertex, std.mem.sliceAsBytes(&PlainVertices));
+    var plainVerticesBuffer = wgfx.Buffer.create(&device, "PlainVertices", wgpu.WGPUBufferUsage_Vertex, std.mem.sliceAsBytes(&PlainVertices));
     defer plainVerticesBuffer.deinit();
 
     var plainUniforms = PlainUniforms{};
-    var plainUniformsBuffer = wgfx.Buffer.createFromPtr(&device, "PlainUniforms", wgpu.BufferUsages.uniform, &plainUniforms);
+    var plainUniformsBuffer = wgfx.Buffer.createFromPtr(&device, "PlainUniforms", wgpu.WGPUBufferUsage_Uniform, &plainUniforms);
     defer plainUniformsBuffer.deinit();
 
-    var linearRepeatSampler = wgfx.Sampler.create(&device, &wgpu.SamplerDescriptor{
-        .label = wgpu.StringView.fromSlice("LinearRepeat"),
-        .address_mode_u = .repeat,
-        .address_mode_v = .repeat,
-        .address_mode_w = .repeat,
-        .min_filter = .linear,
-        .mag_filter = .linear,
-        .mipmap_filter = .linear,
+    var linearRepeatSampler = wgfx.Sampler.create(&device, &wgpu.WGPUSamplerDescriptor{
+        .label = handles.stringView("LinearRepeat"),
+        .addressModeU = wgpu.WGPUAddressMode_Repeat,
+        .addressModeV = wgpu.WGPUAddressMode_Repeat,
+        .addressModeW = wgpu.WGPUAddressMode_Repeat,
+        .minFilter = wgpu.WGPUFilterMode_Linear,
+        .magFilter = wgpu.WGPUFilterMode_Linear,
+        .mipmapFilter = wgpu.WGPUMipmapFilterMode_Linear,
+        .lodMaxClamp = 32,
+        .maxAnisotropy = 1,
     });
     defer linearRepeatSampler.deinit();
-
     // Zig 0.17 note: `@Vector` alignment is now the natural SIMD alignment, so a
     // CPU-side image buffer must not be an array of vectors (it would be padded).
     var texData: [512][512][4]u8 = undefined;
@@ -114,11 +126,11 @@ pub fn main(init: std.process.Init) !void {
             pixel.* = @splat(v);
         }
     }
-    var plainTexture = wgfx.Texture.createFromDesc(&device, &wgpu.TextureDescriptor{
-        .label = wgpu.StringView.fromSlice("Texture"),
-        .usage = wgpu.TextureUsages.texture_binding | wgpu.TextureUsages.copy_dst | wgpu.TextureUsages.storage_binding,
-        .format = .rgba8_unorm,
-        .mip_level_count = wgfx.Texture.getMaxNumLevels(@intCast(texData[0].len), @intCast(texData.len), 1),
+    var plainTexture = wgfx.Texture.createFromDesc(&device, &wgpu.WGPUTextureDescriptor{
+        .label = handles.stringView("Texture"),
+        .usage = wgpu.WGPUTextureUsage_TextureBinding | wgpu.WGPUTextureUsage_CopyDst | wgpu.WGPUTextureUsage_StorageBinding,
+        .format = wgpu.WGPUTextureFormat_RGBA8Unorm,
+        .mipLevelCount = wgfx.Texture.getMaxNumLevels(@intCast(texData[0].len), @intCast(texData.len), 1),
         .size = .{
             .width = @intCast(texData[0].len),
             .height = @intCast(texData.len),
@@ -132,7 +144,7 @@ pub fn main(init: std.process.Init) !void {
     defer fontRender.deinit();
 
     const plainBindGroup = plainShader.createBindGroup("Plain", 0, .{ plainUniformsBuffer.buffer, linearRepeatSampler.sampler, plainTexture.view }).?;
-    defer plainBindGroup.release();
+    defer wgpu.wgpuBindGroupRelease(plainBindGroup);
 
     var commands = wgfx.Commands.create(&device, "commands");
     defer commands.deinit();
@@ -140,10 +152,16 @@ pub fn main(init: std.process.Init) !void {
     var depthTexture: ?wgfx.Texture = null;
     defer wgfx.deinitObj(&depthTexture);
 
+    // Optional smoke-test knob: exit after N frames instead of waiting for the
+    // window to close (used by CI/headless checks: WGPU_MAX_FRAMES=200).
+    var maxFrames: i64 = -1;
+    if (init.environ_map.get("WGPU_MAX_FRAMES")) |limit|
+        maxFrames = try std.fmt.parseInt(i64, limit, 10);
+
     var frames: i64 = 0;
     const timeStart = std.Io.Timestamp.now(io, .awake);
     var timePrev = timeStart;
-    while (!window.shouldClose()) {
+    while (!window.shouldClose() and (maxFrames < 0 or frames < maxFrames)) {
         const surfTexViewOrError = surface.acquireTexture();
         if (surfTexViewOrError) |surfTexView| {
             const width, const height = window.getSize();
@@ -165,29 +183,32 @@ pub fn main(init: std.process.Init) !void {
             }
 
             commands.start();
-            const renderPass = commands.beginRenderPass("main", &[_]wgpu.ColorAttachment{
+            const renderPass = commands.beginRenderPass("main", &[_]wgpu.WGPURenderPassColorAttachment{
                     .{
                         .view = surfTexView,
-                        .clear_value = wgpu.Color{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
+                        .depthSlice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
+                        .loadOp = wgpu.WGPULoadOp_Clear,
+                        .storeOp = wgpu.WGPUStoreOp_Store,
+                        .clearValue = .{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
                     },
-                }, 
-                &wgpu.DepthStencilAttachment {
+                },
+                &wgpu.WGPURenderPassDepthStencilAttachment{
                     .view = depthTexture.?.view,
-                    .depth_load_op = .clear,
-                    .depth_store_op = .store,
-                    .depth_clear_value = 1.0,
+                    .depthLoadOp = wgpu.WGPULoadOp_Clear,
+                    .depthStoreOp = wgpu.WGPUStoreOp_Store,
+                    .depthClearValue = 1.0,
                 }
             );
 
-            renderPass.setPipeline(plainShader.pipeline.render);
-            renderPass.setVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.getSize());
-            renderPass.setBindGroup(0, plainBindGroup, 0, null);
-            renderPass.draw(3, 1, 0, 0);
+            renderPass.wgpuRenderPassEncoderSetPipeline(plainShader.pipeline.render);
+            renderPass.wgpuRenderPassEncoderSetVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.wgpuBufferGetSize());
+            renderPass.wgpuRenderPassEncoderSetBindGroup(0, plainBindGroup, 0, null);
+            renderPass.wgpuRenderPassEncoderDraw(3, 1, 0, 0);
 
             fontRender.render(renderPass, .{ @intCast(width), @intCast(height) });
 
-            renderPass.end();
-            renderPass.release();
+            renderPass.wgpuRenderPassEncoderEnd();
+            wgpu.wgpuRenderPassEncoderRelease(renderPass);
 
             device.submit(&commands, true);
 
@@ -196,20 +217,20 @@ pub fn main(init: std.process.Init) !void {
         } else |err| switch (err) {
             wgfx.AcquireTextureError.SurfaceNeedsConfigure => {
                 const width, const height = window.getSize();
-                surface.configure(.{ @intCast(width), @intCast(height) }, wgpu.PresentMode.immediate);
+                surface.configure(.{ @intCast(width), @intCast(height) }, wgpu.WGPUPresentMode_Immediate);
 
                 wgfx.deinitObj(&depthTexture);
-                depthTexture = wgfx.Texture.createFromDesc(&device, &wgpu.TextureDescriptor{
-                    .label = wgpu.StringView.fromSlice("Depth"),
+                depthTexture = wgfx.Texture.createFromDesc(&device, &wgpu.WGPUTextureDescriptor{
+                    .label = handles.stringView("Depth"),
                     .format = depthStencilFormat,
-                    .usage = wgpu.TextureUsages.render_attachment,
-                    .size = .{.width = @intCast(width), .height = @intCast(height), },
+                    .usage = wgpu.WGPUTextureUsage_RenderAttachment,
+                    .size = .{ .width = @intCast(width), .height = @intCast(height) },
                 });
             },
             wgfx.AcquireTextureError.SurfaceLost => break,
         }
 
-        _ = device.device.poll(false, null);
+        _ = device.device.wgpuDevicePoll(0, null);
         glfw.pollEvents();
     }
 

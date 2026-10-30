@@ -1,14 +1,15 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
 
+const handles = @import("handles.zig");
 const util = @import("util.zig");
 
 const devi = @import("device.zig");
 const Device = devi.Device;
 
 pub const Commands = struct {
-    encoder: ?*wgpu.CommandEncoder = null,
-    commands: ?*wgpu.CommandBuffer = null,
+    encoder: ?handles.CommandEncoder = null,
+    commands: ?wgpu.WGPUCommandBuffer = null,
     name: []const u8,
     device: *Device,
 
@@ -16,10 +17,7 @@ pub const Commands = struct {
 
     pub fn create(device: *Device, name: []const u8) Commands {
         return .{
-            .name = device.alloc.dupe(
-                u8,
-                name,
-            ) catch unreachable,
+            .name = device.alloc.dupe(u8, name) catch unreachable,
             .device = device,
         };
     }
@@ -33,37 +31,42 @@ pub const Commands = struct {
     pub fn start(self: *Self) void {
         std.debug.assert(self.encoder == null);
         std.debug.assert(self.commands == null);
-        self.encoder = self.device.device.createCommandEncoder(&wgpu.CommandEncoderDescriptor{
-            .label = wgpu.StringView.fromSlice(self.name),
-        }).?;
+        self.encoder = self.device.device.wgpuDeviceCreateCommandEncoder(&.{
+            .label = handles.stringView(self.name),
+        }) orelse @panic("wgpuDeviceCreateCommandEncoder failed");
     }
 
     pub fn finish(self: *Self) void {
         std.debug.assert(self.commands == null);
         if (self.encoder == null)
             return;
-        self.commands = self.encoder.?.finish(&wgpu.CommandBufferDescriptor{
-            .label = wgpu.StringView.fromSlice(self.name),
-        }).?;
-        util.releaseObj(&self.encoder);
+        self.commands = self.encoder.?.wgpuCommandEncoderFinish(&.{
+            .label = handles.stringView(self.name),
+        });
+        util.releaseObj(wgpu.wgpuCommandEncoderRelease, &self.encoder);
     }
 
-    pub fn beginRenderPass(self: *Self, passName: []const u8, colorAttachments: []const wgpu.ColorAttachment, depthAttachment: ?*const wgpu.DepthStencilAttachment) *wgpu.RenderPassEncoder {
+    pub fn beginRenderPass(
+        self: *Self,
+        passName: []const u8,
+        colorAttachments: []const wgpu.WGPURenderPassColorAttachment,
+        depthAttachment: ?*const wgpu.WGPURenderPassDepthStencilAttachment,
+    ) handles.RenderPassEncoder {
         if (self.encoder == null)
             self.start();
-        return self.encoder.?.beginRenderPass(&wgpu.RenderPassDescriptor{
-            .label = wgpu.StringView.fromSlice(passName),
-            .depth_stencil_attachment = depthAttachment,
-            .color_attachment_count = colorAttachments.len,
-            .color_attachments = colorAttachments.ptr,
-        }).?;
+        return self.encoder.?.wgpuCommandEncoderBeginRenderPass(&.{
+            .label = handles.stringView(passName),
+            .depthStencilAttachment = depthAttachment,
+            .colorAttachmentCount = colorAttachments.len,
+            .colorAttachments = colorAttachments.ptr,
+        }) orelse @panic("wgpuCommandEncoderBeginRenderPass failed");
     }
 
-    pub fn beginComputePass(self: *Self, passName: []const u8) *wgpu.ComputePassEncoder {
+    pub fn beginComputePass(self: *Self, passName: []const u8) handles.ComputePassEncoder {
         if (self.encoder == null)
             self.start();
-        return self.encoder.?.beginComputePass(&wgpu.ComputePassDescriptor{
-            .label = wgpu.StringView.fromSlice(passName),
-        }).?;
+        return self.encoder.?.wgpuCommandEncoderBeginComputePass(&.{
+            .label = handles.stringView(passName),
+        }) orelse @panic("wgpuCommandEncoderBeginComputePass failed");
     }
 };

@@ -40,8 +40,10 @@
             .url = "git+https://github.com/zig-gamedev/zglfw#2450fe3c4140091287c79cb41e4a8020af73d896",
             .hash = "zglfw-0.10.0-dev-zgVDNHC7IQAbvGj5whD2Cp5TMmo5G2C9gNYaF-y-EDZ3",
         },
-        .wgpu_native_zig = .{
-            .path = "deps/wgpu_native_zig",
+        // Raw C import: `deps/wgpu_native` exposes webgpu.h/wgpu.h translated with
+        // translate-C plus the prebuilt wgpu-native archives (lazy, per target).
+        .wgpu_native = .{
+            .path = "deps/wgpu_native",
         },
         .zmath = .{
             .url = "git+https://github.com/zig-gamedev/zmath#43250209495cfb8a1a8d56c2977c563139c6eafe",

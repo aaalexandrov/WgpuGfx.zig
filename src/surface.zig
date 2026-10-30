@@ -2,6 +2,7 @@ const std = @import("std");
 const wgpu = @import("wgpu");
 const glfw = @import("zglfw");
 
+const handles = @import("handles.zig");
 const util = @import("util.zig");
 const devi = @import("device.zig");
 const Device = devi.Device;
@@ -12,23 +13,23 @@ pub const AcquireTextureError = error{
 };
 
 pub const Surface = struct {
-    surface: *wgpu.Surface,
-    format: wgpu.TextureFormat = wgpu.TextureFormat.undefined,
+    surface: handles.Surface,
+    format: wgpu.WGPUTextureFormat = wgpu.WGPUTextureFormat_Undefined,
     name: []const u8,
     device: *Device,
-    surfaceView: ?*wgpu.TextureView = null,
+    surfaceView: ?handles.TextureView = null,
     configured: bool = false,
 
     const Self = @This();
 
     pub fn create(device: *Device, window: *glfw.Window, name: []const u8) Self {
-        const chained = getSurfaceChain(window);
+        var chain = getSurfaceChain(window);
         const ownName = device.alloc.dupe(u8, name) catch unreachable;
         return .{
-            .surface = device.instance.createSurface(&wgpu.SurfaceDescriptor{
-                .next_in_chain = chained.getChain().?,
-                .label = wgpu.StringView.fromSlice(ownName),
-            }).?,
+            .surface = device.instance.wgpuInstanceCreateSurface(&.{
+                .nextInChain = chain.ptr(),
+                .label = handles.stringView(ownName),
+            }) orelse @panic("wgpuInstanceCreateSurface failed"),
             .name = ownName,
             .device = device,
         };
@@ -36,59 +37,72 @@ pub const Surface = struct {
 
     pub fn deinit(self: *Self) void {
         std.debug.assert(self.surfaceView == null);
-        self.surface.release();
+        wgpu.wgpuSurfaceRelease(self.surface);
         self.device.alloc.free(self.name);
     }
 
-    pub fn configure(self: *Self, size: [2]u32, presentMode: wgpu.PresentMode) void {
+    pub fn configure(self: *Self, size: [2]u32, presentMode: wgpu.WGPUPresentMode) void {
         std.debug.assert(self.surfaceView == null);
-        self.surface.configure(&wgpu.SurfaceConfiguration{
+        // wgpu refuses to re-configure a surface that still has a presentation;
+        // an explicit unconfigure keeps resize/reconfigure legal.
+        if (self.configured)
+            wgpu.wgpuSurfaceUnconfigure(self.surface);
+        var config = wgpu.WGPUSurfaceConfiguration{
             .device = self.device.device,
             .format = self.format,
+            .usage = wgpu.WGPUTextureUsage_RenderAttachment,
             .width = size[0],
             .height = size[1],
-            .present_mode = presentMode,
-        });
+            .presentMode = presentMode,
+        };
+        wgpu.wgpuSurfaceConfigure(self.surface, &config);
         self.configured = true;
     }
 
-    pub fn acquireTexture(self: *Self) AcquireTextureError!*wgpu.TextureView {
+    pub fn acquireTexture(self: *Self) AcquireTextureError!handles.TextureView {
         std.debug.assert(self.surfaceView == null);
         if (!self.configured)
             return AcquireTextureError.SurfaceNeedsConfigure;
-        var surfTex: wgpu.SurfaceTexture = undefined;
-        self.surface.getCurrentTexture(&surfTex);
-        switch (surfTex.status) {
-            .success_optimal => {
-                self.surfaceView = surfTex.texture.?.createView(null).?;
-                return self.surfaceView.?;
+        var surfTex: wgpu.WGPUSurfaceTexture = undefined;
+        wgpu.wgpuSurfaceGetCurrentTexture(self.surface, &surfTex);
+        return switch (surfTex.status) {
+            wgpu.WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal => blk: {
+                const view = surfTex.texture.?.wgpuTextureCreateView(null) orelse
+                    return AcquireTextureError.SurfaceNeedsConfigure;
+                self.surfaceView = view;
+                break :blk view;
             },
-            .outdated, .lost, .success_suboptimal => return AcquireTextureError.SurfaceNeedsConfigure,
-            else => return AcquireTextureError.SurfaceLost,
-        }
+            // Transient states: unconfigure and configure again with the new size.
+            wgpu.WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal,
+            wgpu.WGPUSurfaceGetCurrentTextureStatus_Outdated,
+            wgpu.WGPUSurfaceGetCurrentTextureStatus_Timeout,
+            wgpu.WGPUSurfaceGetCurrentTextureStatus_Occluded,
+            => AcquireTextureError.SurfaceNeedsConfigure,
+            else => AcquireTextureError.SurfaceLost,
+        };
     }
 
     pub fn present(self: *Self) void {
         std.debug.assert(self.surfaceView != null);
-        _ = self.surface.present();
-        util.releaseObj(&self.surfaceView);
+        _ = wgpu.wgpuSurfacePresent(self.surface);
+        util.releaseObj(wgpu.wgpuTextureViewRelease, &self.surfaceView);
     }
 };
 
 const SurfaceChain = union(enum) {
-    win32: wgpu.SurfaceSourceWindowsHWND,
-    x11: wgpu.SurfaceSourceXlibWindow,
-    wayland: wgpu.SurfaceSourceWaylandSurface,
-    empty,
+    win32: wgpu.WGPUSurfaceSourceWindowsHWND,
+    x11: wgpu.WGPUSurfaceSourceXlibWindow,
+    xcb: wgpu.WGPUSurfaceSourceXCBWindow,
+    wayland: wgpu.WGPUSurfaceSourceWaylandSurface,
 
     const Self = @This();
 
-    pub fn getChain(self: *const Self) ?*const wgpu.ChainedStruct {
+    pub fn ptr(self: *Self) [*c]wgpu.WGPUChainedStruct {
         return switch (self.*) {
-            .win32 => |val| &val.chain,
-            .x11 => |val| &val.chain,
-            .wayland => |val| &val.chain,
-            .empty => null,
+            .win32 => |*v| &v.chain,
+            .x11 => |*v| &v.chain,
+            .xcb => |*v| &v.chain,
+            .wayland => |*v| &v.chain,
         };
     }
 };
@@ -97,33 +111,36 @@ const builtin = @import("builtin");
 pub const getSurfaceChain: fn (window: *glfw.Window) SurfaceChain = switch (builtin.target.os.tag) {
     .windows => getSurfaceChainWin32,
     .linux => getSurfaceChainLinux,
-    else => unreachable
+    else => @panic("unsupported platform for wgpu surfaces"),
 };
 
 fn getSurfaceChainLinux(window: *glfw.Window) SurfaceChain {
-    return if (glfw.getX11Display()) |display|
-        SurfaceChain{ .x11 = wgpu.SurfaceSourceXlibWindow{
+    if (glfw.getX11Display()) |display| {
+        return .{ .x11 = .{
+            .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceXlibWindow },
             .display = display,
             .window = glfw.getX11Window(window),
-        } }
-    else
-        SurfaceChain{ .wayland = wgpu.SurfaceSourceWaylandSurface{
-            .display = glfw.getWaylandDisplay().?,
-            .surface = glfw.getWaylandWindow(window).?,
         } };
+    }
+    return .{ .wayland = .{
+        .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceWaylandSurface },
+        .display = glfw.getWaylandDisplay() orelse @panic("no wayland display"),
+        .surface = glfw.getWaylandWindow(window) orelse @panic("no wayland surface"),
+    } };
 }
 
 fn getSurfaceChainWin32(window: *glfw.Window) SurfaceChain {
-    return SurfaceChain{ .win32 = wgpu.SurfaceSourceWindowsHWND{
+    return .{ .win32 = .{
+        .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceWindowsHWND },
         .hinstance = std.os.windows.kernel32.GetModuleHandleW(null).?,
         .hwnd = glfw.getWin32Window(window).?,
     } };
 }
 
-pub fn getSurfaceFormat(surface: *wgpu.Surface, adapter: *wgpu.Adapter) ?wgpu.TextureFormat {
-    var surfaceCaps: wgpu.SurfaceCapabilities = undefined;
-    if (surface.getCapabilities(adapter, &surfaceCaps) != .success)
+pub fn getSurfaceFormat(surface: handles.Surface, adapter: handles.Adapter) ?wgpu.WGPUTextureFormat {
+    var caps: wgpu.WGPUSurfaceCapabilities = undefined;
+    if (wgpu.wgpuSurfaceGetCapabilities(surface, adapter, &caps) != wgpu.WGPUStatus_Success)
         return null;
-    defer surfaceCaps.freeMembers();
-    return if (surfaceCaps.format_count > 0) surfaceCaps.formats[0] else null;
+    defer wgpu.wgpuSurfaceCapabilitiesFreeMembers(caps);
+    return if (caps.formatCount > 0) caps.formats[0] else null;
 }
