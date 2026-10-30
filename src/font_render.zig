@@ -5,7 +5,7 @@ const zm = @import("zmath");
 const wgfx = @import("wgfx.zig");
 
 pub const FontUniforms = extern struct {
-    worldViewProj: [4][4]f32 = zm.identity(),
+    worldViewProj: [4][4]f32 = @bitCast(zm.identity()),
 };
 
 pub const FontVertexPosColorUv = extern struct {
@@ -18,6 +18,7 @@ pub const FontRender = struct {
     font: wgfx.FixedFont,
     shader: *wgfx.Shader,
     sampler: *wgfx.Sampler,
+    alloc: std.mem.Allocator,
     vertices: std.ArrayList(VertexStruct),
     bindGroup: *wgpu.BindGroup = undefined,
     uniformBuffer: wgfx.Buffer,
@@ -49,7 +50,8 @@ pub const FontRender = struct {
             .font = try wgfx.FixedFont.create(device, fontfile),
             .shader = shader,
             .sampler = sampler,
-            .vertices = .init(device.alloc),
+            .alloc = device.alloc,
+            .vertices = std.ArrayList(VertexStruct).initCapacity(device.alloc, maxChars * 4) catch unreachable,
             .uniformBuffer = .createFromDesc(device, &wgpu.BufferDescriptor{
                 .label = wgpu.StringView.fromSlice("FontUniforms"),
                 .usage = wgpu.BufferUsages.uniform | wgpu.BufferUsages.copy_dst,
@@ -75,7 +77,7 @@ pub const FontRender = struct {
         self.indexBuffer.deinit();
         self.vertexBuffer.deinit();
         self.uniformBuffer.deinit();
-        self.vertices.deinit();
+        self.vertices.deinit(self.alloc);
         self.font.deinit();
     }
 
@@ -96,11 +98,11 @@ pub const FontRender = struct {
                 while (x < 2) : (x += 1) {
                     const xy = TexCoord{ x, y };
                     const vertPos = pos + xy * charScaled;
-                    self.vertices.append(.{
+                    self.vertices.appendAssumeCapacity(.{
                         .pos = .{ vertPos[0], vertPos[1], 0 },
                         .color = color,
                         .uv = charTc + xy * charTexSize,
-                    }) catch unreachable;
+                    });
                 }
             }
         }
@@ -108,13 +110,13 @@ pub const FontRender = struct {
     }
 
     pub fn clear(self: *Self) void {
-        self.vertices.resize(0) catch unreachable;
+        self.vertices.clearRetainingCapacity();
     }
 
     pub fn update(self: *Self, targetSize: Coord) void {
         if (@reduce(.Or, targetSize != self.currentTargetSize)) {
             const uniforms = UniformStruct{
-                .worldViewProj = zm.orthographicOffCenterLh(0, @floatFromInt(targetSize[0]), 0, @floatFromInt(targetSize[1]), 0, 1),
+                .worldViewProj = @bitCast(zm.orthographicOffCenterLh(0, @floatFromInt(targetSize[0]), 0, @floatFromInt(targetSize[1]), 0, 1)),
             };
             self.uniformBuffer.writePtr(0, &uniforms);
             self.currentTargetSize = targetSize;
@@ -124,7 +126,7 @@ pub const FontRender = struct {
             self.currentNumChars = @intCast(self.vertices.items.len / 4);
             if (self.vertices.items.len > 0) {
                 self.vertexBuffer.write(0, std.mem.sliceAsBytes(self.vertices.items));
-                self.vertices.resize(0) catch unreachable;
+                self.vertices.clearRetainingCapacity();
             }
             self.modified = false;
         }

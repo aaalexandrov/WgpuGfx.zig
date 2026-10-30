@@ -88,8 +88,13 @@ pub const Shader = struct {
     }
 
     pub fn loadModule(device: *Device, filename: []const u8) !*wgpu.ShaderModule {
-        const file = try std.fs.cwd().openFile(filename, .{});
-        const content = try file.readToEndAllocOptions(device.alloc, std.math.maxInt(i32), null, @alignOf(u8), 0);
+        // Zig 0.17: file I/O goes through an Io implementation (`std.Io.Threaded` by default).
+        const content = try std.Io.Dir.cwd().readFileAlloc(
+            device.io,
+            filename,
+            device.alloc,
+            .limited(std.math.maxInt(u32)),
+        );
         defer device.alloc.free(content);
         return device.device.createShaderModule(&wgpu.ShaderModuleDescriptor{
             .next_in_chain = @ptrCast(&wgpu.ShaderSourceWGSL{
@@ -180,16 +185,30 @@ pub fn getVertexFormat(comptime T: type) wgpu.VertexFormat {
     };
 }
 
-pub fn getVertexAttributes(comptime T: type) [std.meta.fields(T).len]wgpu.VertexAttribute {
-    var attrs: [std.meta.fields(T).len]wgpu.VertexAttribute = undefined;
-    inline for (std.meta.fields(T), 0..) |field, i| {
+pub fn getVertexAttributes(comptime T: type) [vertexFieldCount(T)]wgpu.VertexAttribute {
+    var attrs: [vertexFieldCount(T)]wgpu.VertexAttribute = undefined;
+    inline for (vertexFieldNames(T), vertexFieldTypes(T), 0..) |name, field_type, i| {
         attrs[i] = .{
-            .format = getVertexFormat(field.type),
-            .offset = @offsetOf(T, field.name),
+            .format = getVertexFormat(field_type),
+            .offset = @offsetOf(T, name),
             .shader_location = i,
         };
     }
     return attrs;
+}
+
+// Zig 0.17: `@typeInfo(T).@"struct"` exposes parallel `field_names`/`field_types` arrays
+// instead of a `fields` array (and `std.meta.fields` is gone).
+fn vertexFieldNames(comptime T: type) []const [:0]const u8 {
+    return @typeInfo(T).@"struct".field_names;
+}
+
+fn vertexFieldTypes(comptime T: type) []const type {
+    return @typeInfo(T).@"struct".field_types;
+}
+
+fn vertexFieldCount(comptime T: type) usize {
+    return @typeInfo(T).@"struct".field_names.len;
 }
 
 pub fn getVertexBufferLayout(comptime T: type) wgpu.VertexBufferLayout {

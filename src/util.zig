@@ -1,7 +1,9 @@
 const std = @import("std");
 
-pub fn findFirstInteger(str: []const u8) []const u8 {
-    var start: u32 = 0;
+pub const IntegerRange = struct { start: usize, end: usize };
+
+pub fn findFirstIntegerRange(str: []const u8) ?IntegerRange {
+    var start: usize = 0;
     while (start < str.len and !std.ascii.isDigit(str[start])) {
         start += 1;
     }
@@ -11,7 +13,11 @@ pub fn findFirstInteger(str: []const u8) []const u8 {
         end += 1;
     }
 
-    return str[start..end];
+    return if (end > start) .{ .start = start, .end = end } else null;
+}
+
+pub fn findFirstInteger(str: []const u8) []const u8 {
+    return if (findFirstIntegerRange(str)) |r| str[r.start..r.end] else "";
 }
 
 pub fn releaseObj(ptr: anytype) void {

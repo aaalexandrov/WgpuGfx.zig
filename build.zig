@@ -33,11 +33,16 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
+    // The prebuilt wgpu-native *release* archives reference the undefined-behaviour
+    // sanitizer runtime. Zig only bundles it automatically in Debug, so ReleaseSafe/Fast
+    // builds need it explicitly or ld fails on __ubsan_handle_*.
+    exe.bundle_ubsan_rt = true;
+
     const zglfw = b.dependency("zglfw", .{});
     exe.root_module.addImport("zglfw", zglfw.module("root"));
 
     if (target.result.os.tag != .emscripten) {
-        exe.linkLibrary(zglfw.artifact("glfw"));
+        exe.root_module.linkLibrary(zglfw.artifact("glfw"));
     }
 
     const wgpu_native_dep = b.dependency("wgpu_native_zig", .{});
@@ -67,9 +72,9 @@ pub fn build(b: *std.Build) void {
 
     // This allows the user to pass arguments to the application in the build
     // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    // NOTE: `std.Build.args` was removed in Zig 0.17; `zig build run -- args` is
+    // no longer forwarded by the build script. Forward arguments explicitly with
+    // `run_cmd.addArg(...)` (or a build option) if the app needs them.
 
     // This creates a build step. It will be visible in the `zig build --help` menu,
     // and can be selected like this: `zig build run`

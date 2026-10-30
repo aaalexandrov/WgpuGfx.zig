@@ -8,7 +8,9 @@ const wgfx = @import("wgfx.zig");
 const font = @import("font_render.zig");
 
 const PlainUniforms = extern struct {
-    worldViewProj: [4][4]f32 = zm.identity(),
+    // zmath 0.11 returns `Mat = [4]@Vector(4, f32)`; vectors are not allowed in
+    // extern structs, so we bitcast to the row-major [4][4]f32 layout the GPU expects.
+    worldViewProj: [4][4]f32 = @bitCast(zm.identity()),
 };
 
 const PlainVertexPosColorUv = extern struct {
@@ -23,18 +25,16 @@ const PlainVertices = [_]PlainVertexPosColorUv{
     .{ .pos = .{ 0.0, 0.5, 0.0 }, .color = .{ 0, 0, 1 }, .uv = .{ 1, 1 } },
 };
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        if (deinit_status == .leak)
-            @panic("Memory leaks detected!");
-    }
-    zstbi.init(alloc);
+pub fn main(init: std.process.Init) !void {
+    // Zig 0.17: `std.heap.GeneralPurposeAllocator` is gone. `std.process.Init`
+    // hands out a leak-checking `gpa`, an `arena`, and an `io` manager.
+    const alloc = init.gpa;
+    const io = init.io;
+
+    try zstbi.init(alloc);
     defer zstbi.deinit();
 
-    var device = wgfx.Device.create(alloc);
+    var device = wgfx.Device.create(alloc, io);
     defer device.deinit();
 
     try glfw.init();
@@ -42,7 +42,7 @@ pub fn main() !void {
 
     const windowName = "Wgpu Gfx";
     glfw.windowHint(.client_api, .no_api);
-    const window = try glfw.Window.create(600, 600, windowName, null);
+    const window = try glfw.Window.create(600, 600, windowName, null, null);
     defer window.destroy();
 
     var surface = wgfx.Surface.create(&device, window, windowName);
@@ -105,10 +105,13 @@ pub fn main() !void {
     });
     defer linearRepeatSampler.deinit();
 
-    var texData: [512][512]@Vector(4, u8) = undefined;
+    // Zig 0.17 note: `@Vector` alignment is now the natural SIMD alignment, so a
+    // CPU-side image buffer must not be an array of vectors (it would be padded).
+    var texData: [512][512][4]u8 = undefined;
     for (&texData, 0..) |*row, y| {
-        for (row, 0..) |*e, x| {
-            e.* = @splat(@truncate(255 * ((x / 16 + y / 16) % 2)));
+        for (row, 0..) |*pixel, x| {
+            const v: u8 = @truncate(255 * ((x / 16 + y / 16) % 2));
+            pixel.* = @splat(v);
         }
     }
     var plainTexture = wgfx.Texture.createFromDesc(&device, &wgpu.TextureDescriptor{
@@ -138,23 +141,23 @@ pub fn main() !void {
     defer wgfx.deinitObj(&depthTexture);
 
     var frames: i64 = 0;
-    const timeStart = std.time.microTimestamp();
+    const timeStart = std.Io.Timestamp.now(io, .awake);
     var timePrev = timeStart;
     while (!window.shouldClose()) {
         const surfTexViewOrError = surface.acquireTexture();
         if (surfTexViewOrError) |surfTexView| {
             const width, const height = window.getSize();
             {
-                const timeNow = std.time.microTimestamp();
-                const angle = @as(f64, @floatFromInt(timeNow - timeStart)) / 1e6;
+                const timeNow = std.Io.Timestamp.now(io, .awake);
+                const angle = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
                 const rot = zm.matFromAxisAngle(.{ 0, 0, -1, 0 }, @floatCast(angle));
                 const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
                 const ortho = zm.orthographicOffCenterLh(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
-                plainUniforms.worldViewProj = zm.transpose(zm.mul(ortho,rot));
+                plainUniforms.worldViewProj = @bitCast(zm.transpose(zm.mul(ortho,rot)));
                 plainUniformsBuffer.writePtr(0, &plainUniforms);
 
                 var msgBuf: [256]u8 = undefined;
-                const msg = std.fmt.bufPrint(&msgBuf, "{d:.2} fps", .{1e6 / @as(f64, @floatFromInt(timeNow - timePrev))}) catch unreachable;
+                const msg = std.fmt.bufPrint(&msgBuf, "{d:.2} fps", .{1e9 / @as(f64, @floatFromInt(timePrev.durationTo(timeNow).toNanoseconds()))}) catch unreachable;
                 timePrev = timeNow;
 
                 fontRender.clear();
@@ -210,7 +213,7 @@ pub fn main() !void {
         glfw.pollEvents();
     }
 
-    const timeNow = std.time.microTimestamp();
-    const durationSecs: f64 = @as(f64, @floatFromInt(timeNow - timeStart)) / 1e6;
+    const timeNow = std.Io.Timestamp.now(io, .awake);
+    const durationSecs: f64 = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
     std.debug.print("Frames: {d}, seconds: {d:.3}, FPS: {d:.3}\n", .{ frames, durationSecs, @as(f64, @floatFromInt(frames)) / durationSecs });
 }

@@ -28,7 +28,7 @@
 
     // Tracks the earliest Zig version that the package considers to be a
     // supported use case.
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.17.0",
 
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
@@ -37,26 +37,26 @@
     // internet connectivity.
     .dependencies = .{
         .zglfw = .{
-            .url = "git+https://github.com/zig-gamedev/zglfw#feeeff9386dd44ba2c18488113023865c41b80a4",
-            .hash = "zglfw-0.10.0-dev-zgVDNLyhIQCZR_rbIf7hnCKuifzcmPOLOQhd_hrqq8cl",
+            .url = "git+https://github.com/zig-gamedev/zglfw#2450fe3c4140091287c79cb41e4a8020af73d896",
+            .hash = "zglfw-0.10.0-dev-zgVDNHC7IQAbvGj5whD2Cp5TMmo5G2C9gNYaF-y-EDZ3",
         },
         .wgpu_native_zig = .{
-            .url = "git+https://github.com/bronter/wgpu_native_zig#ed408d55240160b6fea9a51e317dc40851b48102",
-            .hash = "wgpu_native_zig-6.5.0-B9jeDFtzAwB1vPOiXTd2BqrP1j4phYk-oBbxbpLKY3xD",
+            .path = "deps/wgpu_native_zig",
         },
         .zmath = .{
-            .url = "git+https://github.com/zig-gamedev/zmath#05799b336d4eb315cd5a5e5693a5704ba01db36c",
-            .hash = "zmath-0.11.0-dev-wjwivdErAwA9JvOksjectxgnDUZumDR1V9DwKy5UeTOT",
+            .url = "git+https://github.com/zig-gamedev/zmath#43250209495cfb8a1a8d56c2977c563139c6eafe",
+            .hash = "zmath-0.11.0-dev-wjwivaAtAwA7W0_rRXAqdwjWGigw6_pxgsYtAdjUbqUj",
         },
         .zstbi = .{
-            .url = "git+https://github.com/zig-gamedev/zstbi#a70604a93988ee553d0ae6a3871726270a6025d5",
-            .hash = "zstbi-0.11.0-dev-L0Ea_9WVBwAO8t0Qbr87vnCEf1QBcNQHbV-O_D0UWYqT",
+            .url = "git+https://github.com/zig-gamedev/zstbi#6b9bea1fd13eb7c8299f23605b4c6b04fccd9aa7",
+            .hash = "zstbi-0.11.0-dev-L0Ea_wGXBwCvXIzUWRNZe-6FpofI_nz4uAOQ4O0Fuxko",
         },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
+        "deps",
         // For example...
         //"LICENSE",
         //"README.md",

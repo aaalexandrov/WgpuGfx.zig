@@ -47,13 +47,13 @@ pub const FixedFont = struct {
 
     pub fn getCharSizeFromFilename(fontpath: []const u8) !Coord {
         const fontfile = std.fs.path.basename(fontpath);
-        const widthInt = util.findFirstInteger(fontfile);
-        const fontRest = fontfile[widthInt.ptr - fontfile.ptr + widthInt.len..];
-        const heightInt = util.findFirstInteger(fontRest);
-        const charSize = Coord{
-            try std.fmt.parseInt(u32, widthInt, 10),
-            try std.fmt.parseInt(u32, heightInt, 10),
-        };
-        return charSize;
+        var sizes: [2]u32 = .{ 0, 0 };
+        var offset: usize = 0;
+        for (&sizes) |*size| {
+            const range = util.findFirstIntegerRange(fontfile[offset..]) orelse return error.InvalidFontFilename;
+            size.* = try std.fmt.parseInt(u32, fontfile[offset + range.start .. offset + range.end], 10);
+            offset += range.end;
+        }
+        return Coord{ sizes[0], sizes[1] };
     }
 };

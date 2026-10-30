@@ -11,6 +11,7 @@ const Commands = @import("commands.zig").Commands;
 
 pub const Device = struct {
     alloc: std.mem.Allocator,
+    io: std.Io,
     instance: *wgpu.Instance,
     inited: bool = false,
     adapter: *wgpu.Adapter = undefined,
@@ -21,11 +22,12 @@ pub const Device = struct {
 
     const Self = @This();
 
-    pub fn create(alloc: std.mem.Allocator) Self {
+    pub fn create(alloc: std.mem.Allocator, io: std.Io) Self {
         wgpu.setLogCallback(logCallback, null);
         wgpu.setLogLevel(.warn);
         return .{
             .alloc = alloc,
+            .io = io,
             .instance = wgpu.Instance.create(null).?,
         };
     }
@@ -97,7 +99,7 @@ pub const Device = struct {
     }
 };
 
-fn logCallback(level: wgpu.LogLevel, message: wgpu.StringView, userdata: ?*anyopaque) callconv(.C) void {
+fn logCallback(level: wgpu.LogLevel, message: wgpu.StringView, userdata: ?*anyopaque) callconv(.c) void {
     _ = userdata;
     std.debug.print("Wgpu {?s}: {?s}\n", .{ std.enums.tagName(wgpu.LogLevel, level), message.toSlice() });
 }
