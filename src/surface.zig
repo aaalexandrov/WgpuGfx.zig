@@ -1,6 +1,6 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
-const glfw = @import("zglfw");
+const sdl = @import("sdl3");
 
 const handles = @import("handles.zig");
 const util = @import("util.zig");
@@ -22,7 +22,7 @@ pub const Surface = struct {
 
     const Self = @This();
 
-    pub fn create(device: *Device, window: *glfw.Window, name: []const u8) Self {
+    pub fn create(device: *Device, window: *sdl.SDL_Window, name: []const u8) Self {
         var chain = getSurfaceChain(window);
         const ownName = device.alloc.dupe(u8, name) catch unreachable;
         return .{
@@ -91,6 +91,7 @@ const SurfaceChain = union(enum) {
     x11: wgpu.WGPUSurfaceSourceXlibWindow,
     xcb: wgpu.WGPUSurfaceSourceXCBWindow,
     wayland: wgpu.WGPUSurfaceSourceWaylandSurface,
+    metal: wgpu.WGPUSurfaceSourceMetalLayer,
 
     const Self = @This();
 
@@ -100,37 +101,50 @@ const SurfaceChain = union(enum) {
             .x11 => |*v| &v.chain,
             .xcb => |*v| &v.chain,
             .wayland => |*v| &v.chain,
+            .metal => |*v| &v.chain,
         };
     }
 };
 
 const builtin = @import("builtin");
-pub const getSurfaceChain: fn (window: *glfw.Window) SurfaceChain = switch (builtin.target.os.tag) {
+pub const getSurfaceChain: fn (window: *sdl.SDL_Window) SurfaceChain = switch (builtin.target.os.tag) {
     .windows => getSurfaceChainWin32,
     .linux => getSurfaceChainLinux,
+    .macos => getSurfaceChainMetal,
     else => @panic("unsupported platform for wgpu surfaces"),
 };
 
-fn getSurfaceChainLinux(window: *glfw.Window) SurfaceChain {
-    if (glfw.getX11Display()) |display| {
+fn getSurfaceChainLinux(window: *sdl.SDL_Window) SurfaceChain {
+    const windowPropsId = sdl.SDL_GetWindowProperties(window);
+    const driverName = sdl.SDL_GetCurrentVideoDriver();
+    if (std.mem.eql(u8, driverName, "x11"))
         return .{ .x11 = .{
             .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceXlibWindow },
-            .display = display,
-            .window = glfw.getX11Window(window),
+            .display = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_X11_DISPLAY_POINTER, null),
+            .window = @intCast(sdl.SDL_GetNumberProperty(windowPropsId, sdl.SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0)),
         } };
-    }
+
     return .{ .wayland = .{
         .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceWaylandSurface },
-        .display = glfw.getWaylandDisplay() orelse @panic("no wayland display"),
-        .surface = glfw.getWaylandWindow(window) orelse @panic("no wayland surface"),
+        .display = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, null),
+        .surface = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, null),
     } };
 }
 
-fn getSurfaceChainWin32(window: *glfw.Window) SurfaceChain {
+fn getSurfaceChainWin32(window: *sdl.SDL_Window) SurfaceChain {
+    const windowPropsId = sdl.SDL_GetWindowProperties(window);
     return .{ .win32 = .{
         .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceWindowsHWND },
-        .hinstance = std.os.windows.kernel32.GetModuleHandleW(null).?,
-        .hwnd = glfw.getWin32Window(window).?,
+        .hinstance = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_WIN32_HINSTANCE_POINTER, null),
+        .hwnd = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null),
+    } };
+}
+
+fn getSurfaceChainMetal(window: *sdl.SDL_Window) SurfaceChain {
+    const metalView = sdl.SDL_Metal_CreateView(window);
+    return .{ .metal = .{
+        .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceMetalLayer },
+        .layer = sdl.SDL_Metal_GetLayer(metalView),
     } };
 }
 

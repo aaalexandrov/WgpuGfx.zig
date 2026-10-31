@@ -1,5 +1,5 @@
 const std = @import("std");
-const glfw = @import("zglfw");
+const sdl = @import("sdl3");
 const wgpu = @import("wgpu");
 const zm = @import("zmath");
 const zstbi = @import("zstbi");
@@ -36,15 +36,12 @@ pub fn main(init: std.process.Init) !void {
     var device = wgfx.Device.create(alloc, io);
     defer device.deinit();
 
-    try glfw.init();
-    defer glfw.terminate();
+    try sdl_errify(sdl.SDL_Init(sdl.SDL_INIT_VIDEO));
+    defer sdl.SDL_Quit();
 
     const windowName = "Wgpu Gfx";
-    // Without this GLFW asks Wayland for an EGL surface and wgpu's Vulkan WSI
-    // then refuses to configure the surface.
-    glfw.windowHint(.client_api, .no_api);
-    const window = try glfw.Window.create(600, 600, windowName, null, null);
-    defer window.destroy();
+    const window = sdl.SDL_CreateWindow(windowName, 600, 600, sdl.SDL_WINDOW_RESIZABLE | sdl.SDL_WINDOW_METAL).?;
+    defer sdl.SDL_DestroyWindow(window);
 
     var surface = wgfx.Surface.create(&device, window, windowName);
     defer surface.deinit();
@@ -53,7 +50,10 @@ pub fn main(init: std.process.Init) !void {
 
     const depthStencilFormat = wgpu.WGPUTextureFormat_Depth32Float;
 
-    var plainShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.WGPUVertexBufferLayout{
+    var plainShader = try wgfx.Shader.createRendering(
+        &device,
+        "data/plain.wgsl",
+        &[_]wgpu.WGPUVertexBufferLayout{
             wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
         },
         &wgpu.WGPUDepthStencilState{
@@ -74,7 +74,10 @@ pub fn main(init: std.process.Init) !void {
     );
     defer plainShader.deinit();
 
-    var fontShader = try wgfx.Shader.createRendering(&device, "data/plain.wgsl", &[_]wgpu.WGPUVertexBufferLayout{
+    var fontShader = try wgfx.Shader.createRendering(
+        &device,
+        "data/plain.wgsl",
+        &[_]wgpu.WGPUVertexBufferLayout{
             wgfx.getVertexBufferLayout(PlainVertexPosColorUv),
         },
         &wgpu.WGPUDepthStencilState{
@@ -151,17 +154,25 @@ pub fn main(init: std.process.Init) !void {
     var frames: i64 = 0;
     const timeStart = std.Io.Timestamp.now(io, .awake);
     var timePrev = timeStart;
-    while (!window.shouldClose()) {
+    var running = true;
+    var event = std.mem.zeroes(sdl.SDL_Event);
+    while (running) {
+        while (sdl.SDL_PollEvent(&event)) {
+            switch (event.type) {
+                sdl.SDL_EVENT_QUIT => running = false,
+                else => {},
+            }
+        }
         const surfTexViewOrError = surface.acquireTexture();
         if (surfTexViewOrError) |surfTexView| {
-            const width, const height = window.getSize();
+            const width, const height = try getWindowSize(window);
             {
                 const timeNow = std.Io.Timestamp.now(io, .awake);
                 const angle = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
                 const rot = zm.matFromAxisAngle(.{ 0, 0, -1, 0 }, @floatCast(angle));
                 const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
                 const ortho = zm.orthographicOffCenterLh(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
-                plainUniforms.worldViewProj = @bitCast(zm.transpose(zm.mul(ortho,rot)));
+                plainUniforms.worldViewProj = @bitCast(zm.transpose(zm.mul(ortho, rot)));
                 plainUniformsBuffer.writePtr(0, &plainUniforms);
 
                 var msgBuf: [256]u8 = undefined;
@@ -174,21 +185,19 @@ pub fn main(init: std.process.Init) !void {
 
             commands.start();
             const renderPass = commands.beginRenderPass("main", &[_]wgpu.WGPURenderPassColorAttachment{
-                    .{
-                        .view = surfTexView,
-                        .depthSlice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
-                        .loadOp = wgpu.WGPULoadOp_Clear,
-                        .storeOp = wgpu.WGPUStoreOp_Store,
-                        .clearValue = .{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
-                    },
+                .{
+                    .view = surfTexView,
+                    .depthSlice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
+                    .loadOp = wgpu.WGPULoadOp_Clear,
+                    .storeOp = wgpu.WGPUStoreOp_Store,
+                    .clearValue = .{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
                 },
-                &wgpu.WGPURenderPassDepthStencilAttachment{
-                    .view = depthTexture.?.view,
-                    .depthLoadOp = wgpu.WGPULoadOp_Clear,
-                    .depthStoreOp = wgpu.WGPUStoreOp_Store,
-                    .depthClearValue = 1.0,
-                }
-            );
+            }, &wgpu.WGPURenderPassDepthStencilAttachment{
+                .view = depthTexture.?.view,
+                .depthLoadOp = wgpu.WGPULoadOp_Clear,
+                .depthStoreOp = wgpu.WGPUStoreOp_Store,
+                .depthClearValue = 1.0,
+            });
 
             renderPass.wgpuRenderPassEncoderSetPipeline(plainShader.pipeline.render);
             renderPass.wgpuRenderPassEncoderSetVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.wgpuBufferGetSize());
@@ -206,7 +215,7 @@ pub fn main(init: std.process.Init) !void {
             frames += 1;
         } else |err| switch (err) {
             wgfx.AcquireTextureError.SurfaceNeedsConfigure => {
-                const width, const height = window.getSize();
+                const width, const height = try getWindowSize(window);
                 surface.configure(.{ @intCast(width), @intCast(height) }, wgpu.WGPUPresentMode_Immediate);
 
                 wgfx.deinitObj(&depthTexture);
@@ -221,10 +230,38 @@ pub fn main(init: std.process.Init) !void {
         }
 
         _ = device.device.wgpuDevicePoll(0, null);
-        glfw.pollEvents();
     }
 
     const timeNow = std.Io.Timestamp.now(io, .awake);
     const durationSecs: f64 = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
     std.debug.print("Frames: {d}, seconds: {d:.3}, FPS: {d:.3}\n", .{ frames, durationSecs, @as(f64, @floatFromInt(frames)) / durationSecs });
+}
+
+fn getWindowSize(window: *sdl.SDL_Window) !struct { u32, u32 } {
+    var width: c_int = undefined;
+    var height: c_int = undefined;
+    if (!sdl.SDL_GetWindowSize(window, &width, &height))
+        return error.SdlError;
+    return .{ @intCast(width), @intCast(height) };
+}
+
+/// Converts the return value of an SDL function to an error union.
+pub fn sdl_errify(value: anytype) error{SdlError}!switch (@typeInfo(@TypeOf(value))) {
+    .bool => void,
+    .pointer, .optional => @TypeOf(value.?),
+    .int => |info| switch (info.signedness) {
+        .signed => @TypeOf(@max(0, value)),
+        .unsigned => @TypeOf(value),
+    },
+    else => @compileError("unerrifiable type: " ++ @typeName(@TypeOf(value))),
+} {
+    return switch (@typeInfo(@TypeOf(value))) {
+        .bool => if (!value) error.SdlError,
+        .pointer, .optional => value orelse error.SdlError,
+        .int => |info| switch (info.signedness) {
+            .signed => if (value >= 0) @max(0, value) else error.SdlError,
+            .unsigned => if (value != 0) value else error.SdlError,
+        },
+        else => comptime unreachable,
+    };
 }

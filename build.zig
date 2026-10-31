@@ -42,7 +42,6 @@ pub fn build(b: *std.Build) void {
     ) orelse .static;
     const wgpu_native = b.dependency("wgpu_native", .{ .wgpu_link_mode = wgpu_link_mode });
 
-
     exe_mod.addImport("wgpu", wgpu_native.module("wgpu"));
 
     // Linking flags live on the module in Zig 0.17. `msvc` archives pull in their own
@@ -50,21 +49,23 @@ pub fn build(b: *std.Build) void {
     if (target.result.abi != .msvc) {
         exe_mod.link_libc = true;
         exe_mod.link_libcpp = true;
+        exe.bundle_ubsan_rt = true; // needed by wgpu-native
     }
 
-    // The prebuilt wgpu-native *release* archives reference the undefined-behaviour
-    // sanitizer runtime. Zig only bundles it automatically in Debug, so ReleaseSafe/Fast
-    // builds need it explicitly or ld fails on __ubsan_handle_*. msvc archives already
-    // ship it, and bundling again gives duplicate symbols.
-    if (target.result.abi != .msvc)
-        exe.bundle_ubsan_rt = true;
+    const sdl_dep = b.dependency("sdl", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const sdl_lib = sdl_dep.artifact("SDL3");
+    exe_mod.linkLibrary(sdl_lib);
 
-    const zglfw = b.dependency("zglfw", .{});
-    exe.root_module.addImport("zglfw", zglfw.module("root"));
-
-    if (target.result.os.tag != .emscripten) {
-        exe.root_module.linkLibrary(zglfw.artifact("glfw"));
-    }
+    const translateSdl = b.addTranslateC(.{
+        .root_source_file = b.path("deps/sdl3.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    translateSdl.addIncludePath(sdl_dep.path("include"));
+    exe_mod.addImport("sdl3", translateSdl.createModule());
 
     const zmath = b.dependency("zmath", .{});
     exe.root_module.addImport("zmath", zmath.module("root"));

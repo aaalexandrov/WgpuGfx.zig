@@ -79,15 +79,15 @@ pub fn build(b: *std.Build) void {
     }
 
     const wgpu_dep = b.lazyDependency(target_name, .{}) orelse
-        @panic("wgpu-native: lazy dependency not fetched");
+        std.debug.panic("wgpu-native: lazy dependency {s} not fetched", .{target_name});
 
     // The C headers *are* the API; translate-C generates the whole Zig binding.
-    const translate = b.addTranslateC(.{
+    const translateWgpu = b.addTranslateC(.{
         .root_source_file = wgpu_dep.path("include/webgpu/wgpu.h"),
         .target = target,
         .optimize = optimize,
     });
-    const wgpu_mod = translate.addModule("wgpu");
+    const wgpu_mod = translateWgpu.addModule("wgpu");
     wgpu_mod.resolved_target = target;
 
     const is_windows = tr.os.tag == .windows;
