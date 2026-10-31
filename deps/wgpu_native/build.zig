@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const link_mode = b.option(
         std.builtin.LinkMode,
-        "wgpu-link-mode",
+        "wgpu_link_mode",
         "Link libwgpu_native statically (default) or dynamically.",
     ) orelse .static;
 
@@ -94,23 +94,22 @@ pub fn build(b: *std.Build) void {
     const is_mac = tr.os.tag == .macos or tr.os.tag == .ios;
 
     var obj_path: ?std.Build.LazyPath = null;
+    // The shared object/dylib/dll the dependee should ship next to its binary when
+    // linking dynamically; re-exported so a dependee can install it.
+    var shared_path: ?std.Build.LazyPath = null;
 
     if (is_windows) {
         // wgpu-native's msvc archives need the C runtime rather than libc++.
         wgpu_mod.link_libcpp = tr.abi != .msvc;
         wgpu_mod.link_libc = true;
+        link_windows_system_libraries(wgpu_mod, tr.abi == .gnu);
         if (link_mode == .static) {
             obj_path = if (tr.abi == .msvc)
                 wgpu_dep.path("lib/wgpu_native.lib")
             else
                 wgpu_dep.path("lib/libwgpu_native.a");
-            link_windows_system_libraries(wgpu_mod, tr.abi == .gnu);
         } else {
-            obj_path = if (tr.abi == .msvc)
-                wgpu_dep.path("lib/wgpu_native.dll.lib")
-            else
-                wgpu_dep.path("lib/libwgpu_native.dll.a");
-            b.installFile("lib/wgpu_native.dll", "lib/wgpu_native.dll");
+            shared_path = wgpu_dep.path("lib/wgpu_native.dll");
         }
     } else if (is_mac) {
         wgpu_mod.link_libcpp = true;
@@ -118,7 +117,7 @@ pub fn build(b: *std.Build) void {
         if (link_mode == .static) {
             obj_path = wgpu_dep.path("lib/libwgpu_native.a");
         } else {
-            b.installFile("lib/libwgpu_native.dylib", "lib/libwgpu_native.dylib");
+            shared_path = wgpu_dep.path("lib/libwgpu_native.dylib");
         }
         link_mac_frameworks(wgpu_mod);
     } else {
@@ -127,7 +126,7 @@ pub fn build(b: *std.Build) void {
         if (link_mode == .static) {
             obj_path = wgpu_dep.path("lib/libwgpu_native.a");
         } else {
-            b.installFile("lib/libwgpu_native.so", "lib/libwgpu_native.so");
+            shared_path = wgpu_dep.path("lib/libwgpu_native.so");
         }
     }
 
@@ -135,8 +134,14 @@ pub fn build(b: *std.Build) void {
         wgpu_mod.addObjectFile(obj);
         b.addNamedLazyPath("wgpu-native-obj", obj);
     }
-    if (link_mode == .dynamic) {
-        wgpu_mod.addLibraryPath(wgpu_dep.path("lib"));
-        wgpu_mod.linkSystemLibrary("wgpu_native", .{});
+    if (shared_path) |shared| {
+        // The dependee links with `-L <wgpu-native-lib-dir> -lwgpu_native` so the
+        // DT_NEEDED entry is the SONAME, installs `wgpu-native-lib` next to its
+        // binary and adds an rpath for it.
+        b.addNamedLazyPath("wgpu-native-lib", shared);
+        b.addNamedLazyPath("wgpu-native-lib-dir", wgpu_dep.path("lib"));
     }
+    // Dynamic linking needs the library search path and an rpath on the *final*
+    // link, which the dependee knows; see the `wgpu_link_mode` option there.
+
 }

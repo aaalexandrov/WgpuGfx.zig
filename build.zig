@@ -35,7 +35,14 @@ pub fn build(b: *std.Build) void {
 
     // webgpu.h + wgpu.h translated to Zig by translate-C, already wired to the
     // prebuilt libwgpu_native archive for the selected target (see deps/wgpu_native).
-    const wgpu_native = b.dependency("wgpu_native", .{});
+    const wgpu_link_mode = b.option(
+        std.builtin.LinkMode,
+        "wgpu_link_mode",
+        "Link libwgpu_native statically (default) or dynamically.",
+    ) orelse .static;
+    const wgpu_native = b.dependency("wgpu_native", .{ .wgpu_link_mode = wgpu_link_mode });
+
+
     exe_mod.addImport("wgpu", wgpu_native.module("wgpu"));
 
     // Linking flags live on the module in Zig 0.17. `msvc` archives pull in their own
@@ -68,6 +75,22 @@ pub fn build(b: *std.Build) void {
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
+    if (wgpu_link_mode == .dynamic) {
+        // Link by SONAME (`-L <package>/lib -lwgpu_native`) and ship the library
+        // next to the binary, with rpaths for both locations.
+        exe.root_module.addLibraryPath(wgpu_native.namedLazyPath("wgpu-native-lib-dir"));
+        exe.root_module.linkSystemLibrary("wgpu_native", .{});
+        exe.root_module.addRPathSpecial("$ORIGIN/../lib");
+        exe.each_lib_rpath = true;
+        const lib_name = switch (target.result.os.tag) {
+            .macos, .ios => "lib/libwgpu_native.dylib",
+            .windows => "lib/wgpu_native.dll",
+            else => "lib/libwgpu_native.so",
+        };
+        const install_lib = b.addInstallFile(wgpu_native.namedLazyPath("wgpu-native-lib"), lib_name);
+        b.getInstallStep().dependOn(&install_lib.step);
+    }
+
     b.installArtifact(exe);
 
     // This *creates* a Run step in the build graph, to be executed when another

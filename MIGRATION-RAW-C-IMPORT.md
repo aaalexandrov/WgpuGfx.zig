@@ -31,13 +31,16 @@ symbols to translate.
 * `b.addTranslateC(wgpu_dep.path("include/webgpu/wgpu.h"))` → `module("wgpu")`;
 * attaches `lib/libwgpu_native.a` (or `.lib`/`.dll.lib` on Windows) to that module,
   plus `link_libc`/`link_libcpp` and the Windows system libs / macOS frameworks;
-* `-Dwgpu-link-mode=dynamic` switches to `linkSystemLibrary("wgpu_native")` and
-  installs the shipped `.so`/`.dylib`/`.dll`.
+* `-Dwgpu_link_mode=dynamic` (forwarded from the main build to the package) links by
+  SONAME (`-L <package>/lib -lwgpu_native`) instead of the static archive; the package
+  re-exports `wgpu-native-lib` / `wgpu-native-lib-dir` so the main build can install the
+  shipped `.so`/`.dylib`/`.dll` into `zig-out/lib` and add `$ORIGIN/../lib` to the rpath.
 
 `build.zig` (main project) then only needs:
 
 ```zig
-const wgpu_native = b.dependency("wgpu_native", .{});
+const wgpu_link_mode = b.option(std.builtin.LinkMode, "wgpu_link_mode", "...") orelse .static;
+const wgpu_native = b.dependency("wgpu_native", .{ .wgpu_link_mode = wgpu_link_mode });
 exe_mod.addImport("wgpu", wgpu_native.module("wgpu"));
 if (target.result.abi != .msvc) { exe_mod.link_libc = true; exe_mod.link_libcpp = true; }
 if (target.result.abi != .msvc) exe.bundle_ubsan_rt = true;
@@ -105,6 +108,17 @@ ReleaseFast: Frames: 200, seconds: 0.118, FPS: 1689.115
 No validation errors, no panics, no present-mode warning.
 
 `WGPU_MAX_FRAMES=<n>` is a new opt-in smoke-test knob in `main.zig` for headless/CI runs.
+
+Binary size, static vs dynamic (`wgpu-native.a` is big):
+
+| mode | debug | release fast |
+|---|---|---|
+| static (default) | 152 MB | ~100 MB |
+| `-Dwgpu_link_mode=dynamic` | 20 MB + 90 MB `zig-out/lib/libwgpu_native.so` | 7.7 MB + same `.so` |
+
+Dynamic builds were checked self-contained: `zig build -Dwgpu_link_mode=dynamic`, copying
+`zig-out/` to another directory and running `bin/wgpu` resolves
+`libwgpu_native.so => <copied>/bin/../lib/libwgpu_native.so` and renders fine.
 
 Cross-target builds (`-Dtarget=aarch64-linux`, `x86_64-windows-*`) fail on
 `unable to find dynamic system library "X11"` — that comes from zglfw needing a sysroot and
