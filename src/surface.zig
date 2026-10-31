@@ -117,7 +117,7 @@ pub const getSurfaceChain: fn (window: *sdl.SDL_Window) SurfaceChain = switch (b
 fn getSurfaceChainLinux(window: *sdl.SDL_Window) SurfaceChain {
     const windowPropsId = sdl.SDL_GetWindowProperties(window);
     const driverName = sdl.SDL_GetCurrentVideoDriver();
-    if (std.mem.eql(u8, driverName, "x11"))
+    if (std.mem.eql(u8, driverName[0..std.mem.len(driverName)], "x11"))
         return .{ .x11 = .{
             .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceXlibWindow },
             .display = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_X11_DISPLAY_POINTER, null),
