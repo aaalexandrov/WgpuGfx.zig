@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
     defer sdl.SDL_Quit();
 
     const windowName = "Wgpu Gfx";
-    const window = sdl.SDL_CreateWindow(windowName, 600, 600, sdl.SDL_WINDOW_RESIZABLE | sdl.SDL_WINDOW_METAL).?;
+    const window = sdl.SDL_CreateWindow(windowName, 600, 600, sdl.SDL_WINDOW_RESIZABLE).?;
     defer sdl.SDL_DestroyWindow(window);
 
     var surface = wgfx.Surface.create(&device, window, windowName);
