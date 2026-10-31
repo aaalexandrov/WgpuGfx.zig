@@ -56,8 +56,6 @@ pub const Shader = struct {
         colorTargets: []const wgpu.WGPUColorTargetState,
     ) !Shader {
         const module = try loadModule(device, filename);
-        // translate-C defaults every C enum to 0 (`Undefined`), which wgpu rejects,
-        // so the states the bindings used to default are filled in here.
         return createRenderingFromDesc(device, &.{
             .label = handles.stringView(filename),
             .vertex = .{
@@ -103,7 +101,6 @@ pub const Shader = struct {
         });
     }
     pub fn loadModule(device: *Device, filename: []const u8) !handles.ShaderModule {
-        // Zig 0.17: file I/O goes through an Io implementation (`std.Io.Threaded` by default).
         const content = try std.Io.Dir.cwd().readFileAlloc(
             device.io,
             filename,
@@ -140,8 +137,6 @@ pub const Shader = struct {
         const groupLayout = self.getBindGroupLayout(groupIndex) orelse return null;
         defer wgpu.wgpuBindGroupLayoutRelease(groupLayout);
 
-        // wgpu-native panics on `size == 0` for buffer entries; the sentinel for
-        // "the whole buffer" is `WGPU_WHOLE_SIZE`.
         for (entries) |*entry| {
             if (entry.buffer != null and entry.size == 0) entry.size = wgpu.WGPU_WHOLE_SIZE;
         }
@@ -224,8 +219,6 @@ pub fn getVertexAttributes(comptime T: type) [vertexFieldCount(T)]wgpu.WGPUVerte
     return attrs;
 }
 
-// Zig 0.17: `@typeInfo(T).@"struct"` exposes parallel `field_names`/`field_types` arrays
-// instead of a `fields` array (and `std.meta.fields` is gone).
 fn vertexFieldNames(comptime T: type) []const [:0]const u8 {
     return @typeInfo(T).@"struct".field_names;
 }
@@ -257,7 +250,6 @@ pub fn getIndexFormat(comptime T: type) wgpu.WGPUIndexFormat {
     };
 }
 
-/// `wgpu-native` has no preset blend states; these mirror `wgpu-types`.
 pub const BlendStates = struct {
     pub const alpha_blending = wgpu.WGPUBlendState{
         .color = .{
@@ -278,7 +270,6 @@ pub const BlendStates = struct {
     };
 };
 
-/// Stencil faces default to "always/keep" instead of translate-C's zero (`Undefined`).
 pub const defaultStencilFace = wgpu.WGPUStencilFaceState{
     .compare = wgpu.WGPUCompareFunction_Always,
     .failOp = wgpu.WGPUStencilOperation_Keep,

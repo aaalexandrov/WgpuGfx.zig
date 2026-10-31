@@ -59,8 +59,6 @@ pub const Sampler = struct {
     const Self = @This();
 
     pub fn create(device: *Device, desc: *const wgpu.WGPUSamplerDescriptor) Sampler {
-        // translate-C zeroes every field, but for these the zero value is not the
-        // value wgpu expects when a field is left out.
         var filled = desc.*;
         if (filled.lodMaxClamp == 0) filled.lodMaxClamp = 32;
         if (filled.maxAnisotropy == 0) filled.maxAnisotropy = 1;
@@ -87,8 +85,6 @@ pub const Texture = struct {
     const Self = @This();
 
     pub fn createFromDesc(device: *Device, desc: *const wgpu.WGPUTextureDescriptor) Texture {
-        // translate-C zeroes every field, so restore the "omitted field" defaults
-        // (`dimension` 0 and `sampleCount` 0 are invalid for wgpu).
         var filled = desc.*;
         if (filled.dimension == wgpu.WGPUTextureDimension_Undefined)
             filled.dimension = @intCast(wgpu.WGPUTextureDimension_2D);
@@ -110,7 +106,6 @@ pub const Texture = struct {
         defer img.deinit();
         if (img.bytes_per_component != 1)
             return error.InvalidValue;
-        // translate-C types the C enums as `c_uint`; the constants are `c_int`.
         const format: wgpu.WGPUTextureFormat = switch (img.num_components) {
             1 => @intCast(wgpu.WGPUTextureFormat_R8Unorm),
             2 => @intCast(wgpu.WGPUTextureFormat_RG8Unorm),

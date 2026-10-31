@@ -62,8 +62,6 @@ pub const Device = struct {
         self.inited = true;
     }
 
-    /// `wgpuInstanceWaitAny` is still `unimplemented!()` in wgpu-native, so the
-    /// callback result has to be driven by `wgpuInstanceProcessEvents`.
     fn waitFor(instance: handles.Instance, completed: *const bool) void {
         while (!completed.*) {
             _ = instance.wgpuInstanceProcessEvents();
@@ -201,7 +199,6 @@ fn logCallback(level: wgpu.WGPULogLevel, message: wgpu.WGPUStringView, userdata:
     std.debug.print("Wgpu {s}: {s}\n", .{ logLevelName(level), handles.stringSlice(message) orelse "" });
 }
 
-// translate-C maps the C enums to integer constants, so there is no `std.enums.tagName`.
 fn logLevelName(level: wgpu.WGPULogLevel) []const u8 {
     return switch (level) {
         wgpu.WGPULogLevel_Off => "off",

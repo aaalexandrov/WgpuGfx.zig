@@ -56,8 +56,6 @@ pub fn VecType(comptime N: comptime_int, comptime T: type) type {
             };
         }
 
-        /// Zig 0.17 no longer allows indexing a `@Vector` with a runtime index, so the
-        /// lane is selected with an `inline for` over comptime-known lane indices.
         pub fn at(self: Self, index: anytype) Elem {
             const i = cast(i32, index);
             const idx = if (i >= 0) i else N + i;
@@ -517,11 +515,6 @@ test MatType {
     try std.testing.expect(zz.eql(Vec2f.vec(.{ 2, 3 })).all());
 }
 
-/// Builds the swizzle field enum (`x`, `y`, `z`, `w` in order) for `N` dimensions.
-///
-/// Zig 0.17 removed the reflective `@Type(.{ .@"enum" = ... })` type construction this
-/// helper used, so the handful of enums it could ever produce are spelled out instead.
-/// Tag types match the anonymous `enum { ... }` literals `VecType` used to compare against.
 pub fn DeclEnum(comptime valNames: []const [:0]const u8) type {
     const swizzle_names = [_][:0]const u8{ "x", "y", "z", "w" };
     inline for (valNames, 0..) |val, i| {

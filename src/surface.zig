@@ -43,8 +43,6 @@ pub const Surface = struct {
 
     pub fn configure(self: *Self, size: [2]u32, presentMode: wgpu.WGPUPresentMode) void {
         std.debug.assert(self.surfaceView == null);
-        // wgpu refuses to re-configure a surface that still has a presentation;
-        // an explicit unconfigure keeps resize/reconfigure legal.
         if (self.configured)
             wgpu.wgpuSurfaceUnconfigure(self.surface);
         var config = wgpu.WGPUSurfaceConfiguration{
@@ -72,7 +70,6 @@ pub const Surface = struct {
                 self.surfaceView = view;
                 break :blk view;
             },
-            // Transient states: unconfigure and configure again with the new size.
             wgpu.WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal,
             wgpu.WGPUSurfaceGetCurrentTextureStatus_Outdated,
             wgpu.WGPUSurfaceGetCurrentTextureStatus_Timeout,

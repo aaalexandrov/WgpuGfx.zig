@@ -27,8 +27,6 @@ const PlainVertices = [_]PlainVertexPosColorUv{
 };
 
 pub fn main(init: std.process.Init) !void {
-    // Zig 0.17: `std.heap.GeneralPurposeAllocator` is gone. `std.process.Init`
-    // hands out a leak-checking `gpa`, an `arena`, and an `io` manager.
     const alloc = init.gpa;
     const io = init.io;
 
@@ -117,8 +115,6 @@ pub fn main(init: std.process.Init) !void {
         .maxAnisotropy = 1,
     });
     defer linearRepeatSampler.deinit();
-    // Zig 0.17 note: `@Vector` alignment is now the natural SIMD alignment, so a
-    // CPU-side image buffer must not be an array of vectors (it would be padded).
     var texData: [512][512][4]u8 = undefined;
     for (&texData, 0..) |*row, y| {
         for (row, 0..) |*pixel, x| {
@@ -152,16 +148,10 @@ pub fn main(init: std.process.Init) !void {
     var depthTexture: ?wgfx.Texture = null;
     defer wgfx.deinitObj(&depthTexture);
 
-    // Optional smoke-test knob: exit after N frames instead of waiting for the
-    // window to close (used by CI/headless checks: WGPU_MAX_FRAMES=200).
-    var maxFrames: i64 = -1;
-    if (init.environ_map.get("WGPU_MAX_FRAMES")) |limit|
-        maxFrames = try std.fmt.parseInt(i64, limit, 10);
-
     var frames: i64 = 0;
     const timeStart = std.Io.Timestamp.now(io, .awake);
     var timePrev = timeStart;
-    while (!window.shouldClose() and (maxFrames < 0 or frames < maxFrames)) {
+    while (!window.shouldClose()) {
         const surfTexViewOrError = surface.acquireTexture();
         if (surfTexViewOrError) |surfTexView| {
             const width, const height = window.getSize();

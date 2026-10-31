@@ -1,12 +1,3 @@
-//! Non-optional aliases for the raw wgpu handles.
-//!
-//! `webgpu.h` declares every handle as a nullable pointer (`?*WGPUFooImpl`), which
-//! translate-C keeps as a Zig optional. App code that has already checked a creation
-//! result stores the payload pointer, so calls read `device.wgpuDeviceCreateBuffer(...)`
-//! instead of `device.?.wgpuDeviceCreateBuffer(...)`.
-//!
-//! The `wgpu*` functions are also attached as members of each handle by translate-C,
-//! so the C API can be used with method-call syntax.
 const wgpu = @import("wgpu");
 
 fn Payload(comptime handle: type) type {

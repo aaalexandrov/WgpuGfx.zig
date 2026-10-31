@@ -21,9 +21,6 @@ pub fn findFirstInteger(str: []const u8) []const u8 {
     return if (findFirstIntegerRange(str)) |r| str[r.start..r.end] else "";
 }
 
-/// Release a raw wgpu handle and clear the owning optional.
-/// The release function is passed explicitly because the C API names it per type
-/// (`wgpuBufferRelease`, `wgpuTextureViewRelease`, ...).
 pub fn releaseObj(release: anytype, ptr: anytype) void {
     if (ptr.*) |obj| {
         release(obj);
