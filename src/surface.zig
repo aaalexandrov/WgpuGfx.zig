@@ -135,7 +135,7 @@ fn getSurfaceChainWin32(window: *sdl.SDL_Window) SurfaceChain {
     const windowPropsId = sdl.SDL_GetWindowProperties(window);
     return .{ .win32 = .{
         .chain = .{ .sType = wgpu.WGPUSType_SurfaceSourceWindowsHWND },
-        .hinstance = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_WIN32_HINSTANCE_POINTER, null),
+        .hinstance = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null),
         .hwnd = sdl.SDL_GetPointerProperty(windowPropsId, sdl.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null),
     } };
 }

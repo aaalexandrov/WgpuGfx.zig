@@ -65,7 +65,10 @@ pub const Device = struct {
     fn waitFor(instance: handles.Instance, completed: *const bool) void {
         while (!completed.*) {
             _ = instance.wgpuInstanceProcessEvents();
-            var req = std.c.timespec{ .sec = 0, .nsec = 1_000_000 };
+            var req: std.c.timespec = .{ 
+                .sec = comptime if (@import("builtin").os.tag == .windows) {} else 0, 
+                .nsec = 1_000_000 
+            };
             _ = std.c.nanosleep(&req, null);
         }
     }
