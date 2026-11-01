@@ -38,8 +38,8 @@ pub fn build(b: *std.Build) void {
     const wgpu_link_mode = b.option(
         std.builtin.LinkMode,
         "wgpu_link_mode",
-        "Link libwgpu_native statically (default) or dynamically.",
-    ) orelse .static;
+        "Link libwgpu_native statically or dynamically (default).",
+    ) orelse .dynamic;
     const wgpu_native = b.dependency("wgpu_native", .{ .wgpu_link_mode = wgpu_link_mode });
 
     exe_mod.addImport("wgpu", wgpu_native.module("wgpu"));

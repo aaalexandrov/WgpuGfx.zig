@@ -47,8 +47,8 @@ pub fn build(b: *std.Build) void {
     const link_mode = b.option(
         std.builtin.LinkMode,
         "wgpu_link_mode",
-        "Link libwgpu_native statically (default) or dynamically.",
-    ) orelse .static;
+        "Link libwgpu_native statically or dynamically(default).",
+    ) orelse .dynamic;
 
     const tr = target.result;
     const abi_str = switch (tr.os.tag) {

@@ -163,9 +163,9 @@ pub fn main(init: std.process.Init) !void {
                 else => {},
             }
         }
+        const width, const height = try getWindowSize(window);
         const surfTexViewOrError = surface.acquireTexture();
         if (surfTexViewOrError) |surfTexView| {
-            const width, const height = try getWindowSize(window);
             {
                 const timeNow = std.Io.Timestamp.now(io, .awake);
                 const angle = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
@@ -204,7 +204,7 @@ pub fn main(init: std.process.Init) !void {
             renderPass.wgpuRenderPassEncoderSetBindGroup(0, plainBindGroup, 0, null);
             renderPass.wgpuRenderPassEncoderDraw(3, 1, 0, 0);
 
-            fontRender.render(renderPass, .{ @intCast(width), @intCast(height) });
+            fontRender.render(renderPass, .{ width, height });
 
             renderPass.wgpuRenderPassEncoderEnd();
             wgpu.wgpuRenderPassEncoderRelease(renderPass);
@@ -215,15 +215,14 @@ pub fn main(init: std.process.Init) !void {
             frames += 1;
         } else |err| switch (err) {
             wgfx.AcquireTextureError.SurfaceNeedsConfigure => {
-                const width, const height = try getWindowSize(window);
-                surface.configure(.{ @intCast(width), @intCast(height) }, wgpu.WGPUPresentMode_Immediate);
+                surface.configure(.{ width, height }, wgpu.WGPUPresentMode_Immediate);
 
                 wgfx.deinitObj(&depthTexture);
                 depthTexture = wgfx.Texture.createFromDesc(&device, &wgpu.WGPUTextureDescriptor{
                     .label = handles.stringView("Depth"),
                     .format = depthStencilFormat,
                     .usage = wgpu.WGPUTextureUsage_RenderAttachment,
-                    .size = .{ .width = @intCast(width), .height = @intCast(height) },
+                    .size = .{ .width = width, .height = height },
                 });
             },
             wgfx.AcquireTextureError.SurfaceLost => break,
