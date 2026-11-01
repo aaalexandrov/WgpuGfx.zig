@@ -18,7 +18,7 @@ pub const Surface = struct {
     name: []const u8,
     device: *Device,
     surfaceView: ?handles.TextureView = null,
-    configured: bool = false,
+    config: ?wgpu.WGPUSurfaceConfiguration = null,
 
     const Self = @This();
 
@@ -43,9 +43,9 @@ pub const Surface = struct {
 
     pub fn configure(self: *Self, size: [2]u32, presentMode: wgpu.WGPUPresentMode) void {
         std.debug.assert(self.surfaceView == null);
-        if (self.configured)
+        if (self.config == null)
             wgpu.wgpuSurfaceUnconfigure(self.surface);
-        var config = wgpu.WGPUSurfaceConfiguration{
+        self.config = .{
             .device = self.device.device,
             .format = self.format,
             .usage = wgpu.WGPUTextureUsage_RenderAttachment,
@@ -53,13 +53,12 @@ pub const Surface = struct {
             .height = size[1],
             .presentMode = presentMode,
         };
-        wgpu.wgpuSurfaceConfigure(self.surface, &config);
-        self.configured = true;
+        wgpu.wgpuSurfaceConfigure(self.surface, &self.config.?);
     }
 
     pub fn acquireTexture(self: *Self) AcquireTextureError!handles.TextureView {
         std.debug.assert(self.surfaceView == null);
-        if (!self.configured)
+        if (self.config == null)
             return AcquireTextureError.SurfaceNeedsConfigure;
         var surfTex: wgpu.WGPUSurfaceTexture = undefined;
         wgpu.wgpuSurfaceGetCurrentTexture(self.surface, &surfTex);

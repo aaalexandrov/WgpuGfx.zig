@@ -164,68 +164,75 @@ pub fn main(init: std.process.Init) !void {
             }
         }
         const width, const height = try getWindowSize(window);
-        const surfTexViewOrError = surface.acquireTexture();
-        if (surfTexViewOrError) |surfTexView| {
-            {
-                const timeNow = std.Io.Timestamp.now(io, .awake);
-                const angle = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
-                const rot = zm.matFromAxisAngle(.{ 0, 0, -1, 0 }, @floatCast(angle));
-                const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
-                const ortho = zm.orthographicOffCenterLh(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
-                plainUniforms.worldViewProj = @bitCast(zm.transpose(zm.mul(ortho, rot)));
-                plainUniformsBuffer.writePtr(0, &plainUniforms);
+        var needReconfigure = if (surface.config) |*surfConfig|
+            surfConfig.width != width or surfConfig.height != height
+        else
+            false;
+        if (!needReconfigure) {
+            const surfTexViewOrError = surface.acquireTexture();
+            if (surfTexViewOrError) |surfTexView| {
+                {
+                    const timeNow = std.Io.Timestamp.now(io, .awake);
+                    const angle = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
+                    const rot = zm.matFromAxisAngle(.{ 0, 0, -1, 0 }, @floatCast(angle));
+                    const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
+                    const ortho = zm.orthographicOffCenterLh(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
+                    plainUniforms.worldViewProj = @bitCast(zm.transpose(zm.mul(ortho, rot)));
+                    plainUniformsBuffer.writePtr(0, &plainUniforms);
 
-                var msgBuf: [256]u8 = undefined;
-                const msg = std.fmt.bufPrint(&msgBuf, "{d:.2} fps", .{1e9 / @as(f64, @floatFromInt(timePrev.durationTo(timeNow).toNanoseconds()))}) catch unreachable;
-                timePrev = timeNow;
+                    var msgBuf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&msgBuf, "{d:.2} fps", .{1e9 / @as(f64, @floatFromInt(timePrev.durationTo(timeNow).toNanoseconds()))}) catch unreachable;
+                    timePrev = timeNow;
 
-                fontRender.clear();
-                fontRender.addLine(msg, .{ 20, 20 }, .{ 0, 0, 1 }, .{ 1, 1 });
-            }
+                    fontRender.clear();
+                    fontRender.addLine(msg, .{ 20, 20 }, .{ 0, 0, 1 }, .{ 1, 1 });
+                }
 
-            commands.start();
-            const renderPass = commands.beginRenderPass("main", &[_]wgpu.WGPURenderPassColorAttachment{
-                .{
-                    .view = surfTexView,
-                    .depthSlice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
-                    .loadOp = wgpu.WGPULoadOp_Clear,
-                    .storeOp = wgpu.WGPUStoreOp_Store,
-                    .clearValue = .{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
-                },
-            }, &wgpu.WGPURenderPassDepthStencilAttachment{
-                .view = depthTexture.?.view,
-                .depthLoadOp = wgpu.WGPULoadOp_Clear,
-                .depthStoreOp = wgpu.WGPUStoreOp_Store,
-                .depthClearValue = 1.0,
-            });
-
-            renderPass.wgpuRenderPassEncoderSetPipeline(plainShader.pipeline.render);
-            renderPass.wgpuRenderPassEncoderSetVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.wgpuBufferGetSize());
-            renderPass.wgpuRenderPassEncoderSetBindGroup(0, plainBindGroup, 0, null);
-            renderPass.wgpuRenderPassEncoderDraw(3, 1, 0, 0);
-
-            fontRender.render(renderPass, .{ width, height });
-
-            renderPass.wgpuRenderPassEncoderEnd();
-            wgpu.wgpuRenderPassEncoderRelease(renderPass);
-
-            device.submit(&commands, true);
-
-            surface.present();
-            frames += 1;
-        } else |err| switch (err) {
-            wgfx.AcquireTextureError.SurfaceNeedsConfigure => {
-                surface.configure(.{ width, height }, wgpu.WGPUPresentMode_Immediate);
-
-                wgfx.deinitObj(&depthTexture);
-                depthTexture = wgfx.Texture.createFromDesc(&device, &wgpu.WGPUTextureDescriptor{
-                    .label = handles.stringView("Depth"),
-                    .format = depthStencilFormat,
-                    .usage = wgpu.WGPUTextureUsage_RenderAttachment,
-                    .size = .{ .width = width, .height = height },
+                commands.start();
+                const renderPass = commands.beginRenderPass("main", &[_]wgpu.WGPURenderPassColorAttachment{
+                    .{
+                        .view = surfTexView,
+                        .depthSlice = wgpu.WGPU_DEPTH_SLICE_UNDEFINED,
+                        .loadOp = wgpu.WGPULoadOp_Clear,
+                        .storeOp = wgpu.WGPUStoreOp_Store,
+                        .clearValue = .{ .r = 0.3, .g = 0.3, .b = 0.3, .a = 1.0 },
+                    },
+                }, &wgpu.WGPURenderPassDepthStencilAttachment{
+                    .view = depthTexture.?.view,
+                    .depthLoadOp = wgpu.WGPULoadOp_Clear,
+                    .depthStoreOp = wgpu.WGPUStoreOp_Store,
+                    .depthClearValue = 1.0,
                 });
-            },
-            wgfx.AcquireTextureError.SurfaceLost => break,
+
+                renderPass.wgpuRenderPassEncoderSetPipeline(plainShader.pipeline.render);
+                renderPass.wgpuRenderPassEncoderSetVertexBuffer(0, plainVerticesBuffer.buffer, 0, plainVerticesBuffer.buffer.wgpuBufferGetSize());
+                renderPass.wgpuRenderPassEncoderSetBindGroup(0, plainBindGroup, 0, null);
+                renderPass.wgpuRenderPassEncoderDraw(3, 1, 0, 0);
+
+                fontRender.render(renderPass, .{ width, height });
+
+                renderPass.wgpuRenderPassEncoderEnd();
+                wgpu.wgpuRenderPassEncoderRelease(renderPass);
+
+                device.submit(&commands, true);
+
+                surface.present();
+                frames += 1;
+            } else |err| switch (err) {
+                wgfx.AcquireTextureError.SurfaceNeedsConfigure => needReconfigure = true,
+                wgfx.AcquireTextureError.SurfaceLost => break,
+            }
+        }
+        if (needReconfigure) {
+            surface.configure(.{ width, height }, wgpu.WGPUPresentMode_Immediate);
+
+            wgfx.deinitObj(&depthTexture);
+            depthTexture = wgfx.Texture.createFromDesc(&device, &wgpu.WGPUTextureDescriptor{
+                .label = handles.stringView("Depth"),
+                .format = depthStencilFormat,
+                .usage = wgpu.WGPUTextureUsage_RenderAttachment,
+                .size = .{ .width = width, .height = height },
+            });
         }
 
         _ = device.device.wgpuDevicePoll(0, null);
