@@ -83,18 +83,23 @@ pub fn build(b: *std.Build) void {
     if (wgpu_link_mode == .dynamic) {
         // Link by SONAME (`-L <package>/lib -lwgpu_native`) and ship the library
         // next to the binary, with rpaths for both locations.
-        exe.root_module.addLibraryPath(wgpu_native.namedLazyPath("wgpu-native-lib-dir"));
+        exe.root_module.addLibraryPath(wgpu_native.namedLazyPath("wgpu-native-lib").dirname());
         exe.root_module.linkSystemLibrary("wgpu_native", .{});
-        exe.root_module.addRPathSpecial("$ORIGIN/../lib");
+        exe.root_module.addRPathSpecial("$ORIGIN");
         exe.each_lib_rpath = true;
-        const lib_name = switch (target.result.os.tag) {
-            .macos, .ios => "lib/libwgpu_native.dylib",
-            .windows => "bin/wgpu_native.dll",
-            else => "lib/libwgpu_native.so",
-        };
-        const install_lib = b.addInstallFile(wgpu_native.namedLazyPath("wgpu-native-lib"), lib_name);
+        const subPath = getSubPath(wgpu_native.namedLazyPath("wgpu-native-lib"));
+        const lib_name = std.fs.path.basename(subPath);
+        const lib_path = std.fs.path.join(b.allocator, &[_][]const u8{"bin", lib_name}) catch unreachable;
+        const install_lib = b.addInstallFile(wgpu_native.namedLazyPath("wgpu-native-lib"), lib_path);
         b.getInstallStep().dependOn(&install_lib.step);
     }
+
+    // copy contents of data/ to the output dir
+    b.installDirectory(.{
+        .install_dir = .bin,
+        .source_dir = b.path("data"),
+        .install_subdir = "data",
+    });
 
     b.installArtifact(exe);
 
@@ -133,3 +138,14 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 }
+
+fn getSubPath(p: std.Build.LazyPath) []const u8 {
+    return switch (p) {
+        .cwd_relative => |cr| cr,
+        .dependency => |dp| dp.sub_path,
+        .generated => |gn| gn.sub_path,
+        .relative => |rl| rl.sub_path,
+        .src_path => |sp| sp.sub_path,
+    };
+}
+

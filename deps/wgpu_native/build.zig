@@ -135,11 +135,10 @@ pub fn build(b: *std.Build) void {
         b.addNamedLazyPath("wgpu-native-obj", obj);
     }
     if (shared_path) |shared| {
-        // The dependee links with `-L <wgpu-native-lib-dir> -lwgpu_native` so the
+        // The dependee links with `-L <wgpu-native-lib.dirname()> -lwgpu_native` so the
         // DT_NEEDED entry is the SONAME, installs `wgpu-native-lib` next to its
         // binary and adds an rpath for it.
         b.addNamedLazyPath("wgpu-native-lib", shared);
-        b.addNamedLazyPath("wgpu-native-lib-dir", wgpu_dep.path("lib"));
     }
     // Dynamic linking needs the library search path and an rpath on the *final*
     // link, which the dependee knows; see the `wgpu_link_mode` option there.
