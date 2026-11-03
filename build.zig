@@ -40,7 +40,11 @@ pub fn build(b: *std.Build) void {
         "wgpu_link_mode",
         "Link libwgpu_native statically or dynamically (default).",
     ) orelse .dynamic;
-    const wgpu_native = b.dependency("wgpu_native", .{ .wgpu_link_mode = wgpu_link_mode });
+    const wgpu_native = b.dependency("wgpu_native", .{ 
+        .target = target, 
+        .optimize = optimize, 
+        .wgpu_link_mode = wgpu_link_mode 
+    });
 
     exe_mod.addImport("wgpu", wgpu_native.module("wgpu"));
 
@@ -85,7 +89,7 @@ pub fn build(b: *std.Build) void {
         exe.each_lib_rpath = true;
         const lib_name = switch (target.result.os.tag) {
             .macos, .ios => "lib/libwgpu_native.dylib",
-            .windows => "lib/wgpu_native.dll",
+            .windows => "bin/wgpu_native.dll",
             else => "lib/libwgpu_native.so",
         };
         const install_lib = b.addInstallFile(wgpu_native.namedLazyPath("wgpu-native-lib"), lib_name);
