@@ -26,12 +26,11 @@ pub const ComputePassEncoder = Payload(wgpu.WGPUComputePassEncoder);
 
 pub const StringView = wgpu.WGPUStringView;
 
-/// `WGPUStringView` is a `{data, length}` pair; there is no implicit null-termination.
 pub inline fn stringView(s: []const u8) StringView {
     return .{ .data = s.ptr, .length = s.len };
 }
 
-pub inline fn stringSlice(v: StringView) ?[]const u8 {
-    if (v.data == null or v.length == 0) return null;
+pub inline fn stringSlice(v: StringView) []const u8 {
+    if (v.data == null or v.length == 0) return "";
     return v.data[0 .. v.length];
 }

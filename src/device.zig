@@ -42,7 +42,7 @@ pub const Device = struct {
         if (self.adapter.wgpuAdapterGetInfo(&adapterInfo) == wgpu.WGPUStatus_Success) {
             defer wgpu.wgpuAdapterInfoFreeMembers(adapterInfo);
             std.debug.print("Adapter: {s}, type: {s}, backend: {s}\n", .{
-                handles.stringSlice(adapterInfo.device) orelse "",
+                handles.stringSlice(adapterInfo.device),
                 adapterTypeName(adapterInfo.adapterType),
                 backendTypeName(adapterInfo.backendType),
             });
@@ -165,7 +165,7 @@ fn requestAdapterCallback(
     result.status = status;
     result.adapter = adapter;
     if (status != wgpu.WGPURequestAdapterStatus_Success)
-        std.debug.print("requestAdapter failed ({d}): {s}\n", .{ status, handles.stringSlice(message) orelse "" });
+        std.debug.print("requestAdapter failed ({d}): {s}\n", .{ status, handles.stringSlice(message) });
 }
 
 fn requestDeviceCallback(
@@ -181,7 +181,7 @@ fn requestDeviceCallback(
     result.status = status;
     result.device = device;
     if (status != wgpu.WGPURequestDeviceStatus_Success)
-        std.debug.print("requestDevice failed ({d}): {s}\n", .{ status, handles.stringSlice(message) orelse "" });
+        std.debug.print("requestDevice failed ({d}): {s}\n", .{ status, handles.stringSlice(message) });
 }
 
 fn uncapturedErrorCallback(
@@ -194,12 +194,12 @@ fn uncapturedErrorCallback(
     _ = device;
     _ = userdata1;
     _ = userdata2;
-    std.debug.print("Wgpu error ({d}): {s}\n", .{ errtype, handles.stringSlice(message) orelse "" });
+    std.debug.print("Wgpu error ({d}): {s}\n", .{ errtype, handles.stringSlice(message) });
 }
 
 fn logCallback(level: wgpu.WGPULogLevel, message: wgpu.WGPUStringView, userdata: ?*anyopaque) callconv(.c) void {
     _ = userdata;
-    std.debug.print("Wgpu {s}: {s}\n", .{ logLevelName(level), handles.stringSlice(message) orelse "" });
+    std.debug.print("Wgpu {s}: {s}\n", .{ logLevelName(level), handles.stringSlice(message) });
 }
 
 fn logLevelName(level: wgpu.WGPULogLevel) []const u8 {

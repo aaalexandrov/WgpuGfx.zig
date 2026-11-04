@@ -44,7 +44,7 @@ pub const Shader = struct {
             desc.vertex.module.?,
             .{ .render = device.device.wgpuDeviceCreateRenderPipeline(desc) orelse
                 @panic("wgpuDeviceCreateRenderPipeline failed") },
-            handles.stringSlice(desc.label) orelse "",
+            handles.stringSlice(desc.label),
         );
     }
 
@@ -86,7 +86,7 @@ pub const Shader = struct {
             desc.compute.module.?,
             .{ .compute = device.device.wgpuDeviceCreateComputePipeline(desc) orelse
                 @panic("wgpuDeviceCreateComputePipeline failed") },
-            handles.stringSlice(desc.label) orelse "",
+            handles.stringSlice(desc.label),
         );
     }
 

@@ -36,7 +36,8 @@ pub fn deinitObj(ptr: anytype) void {
 }
 
 pub fn copyNameFromDescLabel(desc: anytype, alloc: std.mem.Allocator) []const u8 {
-    return if (handles.stringSlice(desc.label)) |label|
+    const label = handles.stringSlice(desc.label);
+    return if (label.len > 0)
         alloc.dupe(u8, label) catch unreachable
     else
         "";
