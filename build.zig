@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) void {
     const wgpu_native = b.dependency("wgpu_native", .{ 
         .target = target, 
         .optimize = optimize, 
-        .wgpu_link_mode = wgpu_link_mode 
+        .wgpu_link_mode = wgpu_link_mode
     });
 
     exe_mod.addImport("wgpu", wgpu_native.module("wgpu"));
@@ -85,11 +85,15 @@ pub fn build(b: *std.Build) void {
         // next to the binary, with rpaths for both locations.
         exe.root_module.addLibraryPath(wgpu_native.namedLazyPath("wgpu-native-lib").dirname());
         exe.root_module.linkSystemLibrary("wgpu_native", .{});
-        exe.root_module.addRPathSpecial("$ORIGIN");
+        switch (target.result.os.tag) {
+            .linux => exe.root_module.addRPathSpecial("$ORIGIN"),
+            .macos => exe.root_module.addRPathSpecial("@loader_path"),
+            else => {},
+        }
         exe.each_lib_rpath = true;
         const subPath = getSubPath(wgpu_native.namedLazyPath("wgpu-native-lib"));
         const lib_name = std.fs.path.basename(subPath);
-        const lib_path = std.fs.path.join(b.allocator, &[_][]const u8{"bin", lib_name}) catch unreachable;
+        const lib_path = std.fs.path.join(b.allocator, &[_][]const u8{ "bin", lib_name }) catch unreachable;
         const install_lib = b.addInstallFile(wgpu_native.namedLazyPath("wgpu-native-lib"), lib_path);
         b.getInstallStep().dependOn(&install_lib.step);
     }
@@ -148,4 +152,3 @@ fn getSubPath(p: std.Build.LazyPath) []const u8 {
         .src_path => |sp| sp.sub_path,
     };
 }
-
