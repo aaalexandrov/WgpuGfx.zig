@@ -1,17 +1,18 @@
 const std = @import("std");
 const sdl = @import("sdl3");
 const wgpu = @import("wgpu");
-const zm = @import("zmath");
 const zstbi = @import("zstbi");
 
 const wgfx = @import("wgfx.zig");
 const handles = wgfx.handles;
 const font = @import("font_render.zig");
+const vm = @import("vec_math.zig");
+
+const Mat4 = vm.Mat(4, 4, f32);
+
 
 const PlainUniforms = extern struct {
-    // zmath 0.11 returns `Mat = [4]@Vector(4, f32)`; vectors are not allowed in
-    // extern structs, so we bitcast to the row-major [4][4]f32 layout the GPU expects.
-    worldViewProj: [4][4]f32 = @bitCast(zm.identity()),
+    worldViewProj: [4][4]f32 = @bitCast(Mat4.diag(1.0)),
 };
 
 const PlainVertexPosColorUv = extern struct {
@@ -174,10 +175,10 @@ pub fn main(init: std.process.Init) !void {
                 {
                     const timeNow = std.Io.Timestamp.now(io, .awake);
                     const angle = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
-                    const rot = zm.matFromAxisAngle(.{ 0, 0, -1, 0 }, @floatCast(angle));
+                    const rot = Mat4.rotate3D(4, @floatCast(angle), .{ 0, 0, -1, 0 });
                     const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
-                    const ortho = zm.orthographicOffCenterLh(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
-                    plainUniforms.worldViewProj = @bitCast(zm.transpose(zm.mul(ortho, rot)));
+                    const ortho = Mat4.orthographic(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
+                    plainUniforms.worldViewProj = @bitCast(Mat4.transpose(Mat4.mul(4, rot, ortho)));
                     plainUniformsBuffer.writePtr(0, &plainUniforms);
 
                     var msgBuf: [256]u8 = undefined;

@@ -71,9 +71,6 @@ pub fn build(b: *std.Build) void {
     translateSdl.addIncludePath(sdl_dep.path("include"));
     exe_mod.addImport("sdl3", translateSdl.createModule());
 
-    const zmath = b.dependency("zmath", .{});
-    exe.root_module.addImport("zmath", zmath.module("root"));
-
     const zstbi = b.dependency("zstbi", .{});
     exe.root_module.addImport("zstbi", zstbi.module("root"));
 

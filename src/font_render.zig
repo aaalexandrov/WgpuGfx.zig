@@ -1,12 +1,14 @@
 const std = @import("std");
 const wgpu = @import("wgpu");
-const zm = @import("zmath");
 
 const wgfx = @import("wgfx.zig");
 const wgpuHandles = @import("handles.zig");
+const vm = @import("vec_math.zig");
+
+const Mat4 = vm.Mat(4, 4, f32);
 
 pub const FontUniforms = extern struct {
-    worldViewProj: [4][4]f32 = @bitCast(zm.identity()),
+    worldViewProj: [4][4]f32 = @bitCast(Mat4.diag(1.0)),
 };
 
 pub const FontVertexPosColorUv = extern struct {
@@ -117,7 +119,7 @@ pub const FontRender = struct {
     pub fn update(self: *Self, targetSize: Coord) void {
         if (@reduce(.Or, targetSize != self.currentTargetSize)) {
             const uniforms = UniformStruct{
-                .worldViewProj = @bitCast(zm.orthographicOffCenterLh(0, @floatFromInt(targetSize[0]), 0, @floatFromInt(targetSize[1]), 0, 1)),
+                .worldViewProj = @bitCast(Mat4.transpose(Mat4.orthographic(0, @floatFromInt(targetSize[0]), 0, @floatFromInt(targetSize[1]), 0, 1))),
             };
             self.uniformBuffer.writePtr(0, &uniforms);
             self.currentTargetSize = targetSize;

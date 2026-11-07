@@ -43,10 +43,6 @@
         .wgpu_native = .{
             .path = "deps/wgpu_native",
         },
-        .zmath = .{
-            .url = "git+https://github.com/zig-gamedev/zmath#43250209495cfb8a1a8d56c2977c563139c6eafe",
-            .hash = "zmath-0.11.0-dev-wjwivaAtAwA7W0_rRXAqdwjWGigw6_pxgsYtAdjUbqUj",
-        },
         .zstbi = .{
             .url = "git+https://github.com/zig-gamedev/zstbi#6b9bea1fd13eb7c8299f23605b4c6b04fccd9aa7",
             .hash = "zstbi-0.11.0-dev-L0Ea_wGXBwCvXIzUWRNZe-6FpofI_nz4uAOQ4O0Fuxko",
