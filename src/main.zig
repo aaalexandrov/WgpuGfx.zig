@@ -177,8 +177,8 @@ pub fn main(init: std.process.Init) !void {
                     const angle = @as(f64, @floatFromInt(timeStart.durationTo(timeNow).toNanoseconds())) / 1e9;
                     const rot = Mat4.rotate3D(4, @floatCast(angle), .{ 0, 0, -1, 0 });
                     const wtoh = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
-                    const ortho = Mat4.orthographic(-1 * wtoh, 1 * wtoh, -1, 1, 0, 1);
-                    plainUniforms.worldViewProj = @bitCast(Mat4.transpose(Mat4.mul(4, rot, ortho)));
+                    const ortho = Mat4.orthographic(-1 * wtoh, 1 * wtoh, -1, 1, -1, 1);
+                    plainUniforms.worldViewProj = @bitCast(Mat4.mul(4, rot, ortho));
                     plainUniformsBuffer.writePtr(0, &plainUniforms);
 
                     var msgBuf: [256]u8 = undefined;

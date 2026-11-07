@@ -119,7 +119,7 @@ pub const FontRender = struct {
     pub fn update(self: *Self, targetSize: Coord) void {
         if (@reduce(.Or, targetSize != self.currentTargetSize)) {
             const uniforms = UniformStruct{
-                .worldViewProj = @bitCast(Mat4.transpose(Mat4.orthographic(0, @floatFromInt(targetSize[0]), 0, @floatFromInt(targetSize[1]), 0, 1))),
+                .worldViewProj = @bitCast(Mat4.orthographic(0, @floatFromInt(targetSize[0]), @floatFromInt(targetSize[1]), 0, -1, 1)),
             };
             self.uniformBuffer.writePtr(0, &uniforms);
             self.currentTargetSize = targetSize;
