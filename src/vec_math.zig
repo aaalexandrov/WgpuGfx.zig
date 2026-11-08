@@ -547,18 +547,20 @@ pub fn Mat(comptime R: u32, comptime C: u32, comptime T: type) type {
             return rotate;
         }
 
+        // right handed, z in [0, 1]
         pub fn perspective(fovY: T, aspect: T, near: T, far: T) Simd {
             comptime if (C != 4 or R != 4) unreachable;
             const tanFov2 = @tan(fovY / 2);
-            const fz = far / (far - near);
+            const fz = far / (near - far);
             return Simd{
                 .{ 1 / (aspect * tanFov2), 0, 0, 0 },
-                .{ 0, -1 / tanFov2, 0, 0 },
-                .{ 0, 0, fz, 1 },
-                .{ 0, 0, -near * fz, 0 },
+                .{ 0, 1 / tanFov2, 0, 0 },
+                .{ 0, 0, fz, -1 },
+                .{ 0, 0, near * fz, 0 },
             };
         }
 
+        // right handed, z in [0, 1]
         pub fn orthographic(left: T, right: T, top: T, bottom: T, near: T, far: T) Simd {
             comptime if (C != 4 or R != 4) unreachable;
             const rl = 1 / (right - left);
