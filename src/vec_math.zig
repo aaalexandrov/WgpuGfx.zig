@@ -550,21 +550,25 @@ pub fn Mat(comptime R: u32, comptime C: u32, comptime T: type) type {
         pub fn perspective(fovY: T, aspect: T, near: T, far: T) Simd {
             comptime if (C != 4 or R != 4) unreachable;
             const tanFov2 = @tan(fovY / 2);
+            const fz = far / (far - near);
             return Simd{
                 .{ 1 / (aspect * tanFov2), 0, 0, 0 },
-                .{ 0, 1 / tanFov2, 0, 0 },
-                .{ 0, 0, -(far + near) / (far - near), -1 },
-                .{ 0, 0, -2 * far * near / (far - near), 0 },
+                .{ 0, -1 / tanFov2, 0, 0 },
+                .{ 0, 0, fz, 1 },
+                .{ 0, 0, -near * fz, 0 },
             };
         }
 
-        pub fn orthographic(left: T, right: T, bottom: T, top: T, near: T, far: T) Simd {
+        pub fn orthographic(left: T, right: T, top: T, bottom: T, near: T, far: T) Simd {
             comptime if (C != 4 or R != 4) unreachable;
+            const rl = 1 / (right - left);
+            const bt = 1 / (bottom - top);
+            const nf = 1 / (near - far);
             return Simd{
-                .{ 2 / (right - left), 0, 0, 0 },
-                .{ 0, 2 / (top - bottom), 0, 0 },
-                .{ 0, 0, -2 / (far - near), 0 },
-                .{ -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1 },
+                .{ 2 * rl, 0, 0, 0 },
+                .{ 0, 2 * bt, 0, 0 },
+                .{ 0, 0, nf, 0 },
+                .{ -(right + left) * rl, -(bottom + top) * bt, near * nf, 1 },
             };
         }
     };
