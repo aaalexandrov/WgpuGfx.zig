@@ -31,6 +31,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "wgpu",
         .root_module = exe_mod,
+        .use_llvm = true,
     });
 
     // webgpu.h + wgpu.h translated to Zig by translate-C, already wired to the
