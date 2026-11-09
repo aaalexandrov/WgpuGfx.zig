@@ -165,7 +165,7 @@ pub fn SpatialTree(comptime N: u32, T: type, D: type) type {
                     curNode = self.spatial.nodes.getPtr(self.nodeIdx) orelse return;
                     while (true) {
                         childIdx += 1;
-                        if (childIdx >= N)
+                        if (childIdx >= NodesPerLevel)
                             break;
                         if ((curNode.childMask & (1 << childIdx)) != 0) {
                             self.nodeIdx = (self.nodeIdx << N) | childIdx;

@@ -434,7 +434,7 @@ pub fn Mat(comptime R: u32, comptime C: u32, comptime T: type) type {
 
             inline for (1..C) |ac| {
                 const c = a[ac];
-                inline for (0..4) |bc|
+                inline for (0..D) |bc|
                     res[bc] += c * @as(Col.Simd, @splat(b[bc][ac]));
             }
             return res;

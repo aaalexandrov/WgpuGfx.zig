@@ -388,7 +388,7 @@ pub fn Convex(comptime N: u32, comptime T: type) type {
 
         pub fn isEmpty(self: *const Self) bool {
             std.debug.assert((self.vertices.len != 0) == (self.triIndices.len != 0));
-            std.debug.assert((self.vertexIncidence.count() != 0) == (std.vertices.len != 0));
+            std.debug.assert((self.vertexIncidence.count() != 0) == (self.vertices.len != 0));
             return self.vertices.len == 0;
         }
 
