@@ -3,10 +3,10 @@ const sdl = @import("sdl3");
 const wgpu = @import("wgpu");
 const zstbi = @import("zstbi");
 
-const wgfx = @import("wgfx.zig");
+const wgfx = @import("render/wgfx.zig");
 const handles = wgfx.handles;
-const font = @import("font_render.zig");
-const vm = @import("vec_math.zig");
+const font = @import("render/font_render.zig");
+const vm = @import("math/vec_math.zig");
 
 const Mat4 = vm.Mat(4, 4, f32);
 

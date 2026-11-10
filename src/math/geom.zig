@@ -17,12 +17,26 @@ pub fn maxValue(comptime T: type) T {
     };
 }
 
+pub fn angleToMat2(comptime T: type, angle: T) vm.Mat(2, 2, T).Simd {
+    const s = @sin(self.angle);
+    const c = @cos(self.angle);
+    return .{
+        .{c, -s},
+        .{s, c}
+    };
+}
+
+pub fn mat2ToAngle(comptime T: type, m: vm.Mat(2, 2, T).Simd) T {
+    return std.math.atan2(m[1][0], m[0][0]);
+}
+
 pub fn Rotation(comptime N: u32, comptime T: type) type {
     return switch (N) {
         2 => struct {
             angle: T = 0,
 
             pub const Vec = vm.Vec(N, T);
+            pub const Mat2 = vm.Mat(N, N, T);
             pub const Self = @This();
 
             pub fn inverse(self: Self) Self {
@@ -37,14 +51,16 @@ pub fn Rotation(comptime N: u32, comptime T: type) type {
                 };
             }
 
+            pub fn toMatrix(self: Self) Mat2.Simd {
+                return angleToMat2(T, self.angle);
+            }
+
+            pub fn fromMatrix(m: Mat2.Simd) Self {
+                return .{.angle = mat2ToAngle(T, m)};
+            }
+
             pub fn rotateVec(self: Self, v: Vec) Vec.Simd {
-                const s = @sin(self.angle);
-                const c = @cos(self.angle);
-                const Mat2 = vm.Mat(2, 2, T);
-                const m = Mat2.Simd{
-                    .{c, -s},
-                    .{s, c}
-                };
+                const m = self.matrix();
                 return Mat2.mulMatVec(m, v);
             }
 

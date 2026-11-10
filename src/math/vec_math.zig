@@ -183,6 +183,7 @@ pub fn Quat(comptime T: type) type {
         pub const Eps = std.math.floatEps(T);
         pub const Vec3 = Vec(3, T);
         pub const Vec4 = Vec(4, T);
+        pub const Mat3 = Mat(3, 3, T);
 
         pub fn load(a: Arr) Simd {
             return a;
@@ -293,6 +294,63 @@ pub fn Quat(comptime T: type) type {
             return v + (uv * w + uuv) * Vec3.splat(2.0);
         }
 
+        pub fn toMatrix(q: Simd) Mat3.Simd {
+            var m: Mat3.Simd = undefined;
+            const qxx = q[0] * q[0];
+            const qyy = q[1] * q[1];
+            const qzz = q[2] * q[2];
+            const qxz = q[0] * q[2];
+            const qxy = q[0] * q[1];
+            const qyz = q[1] * q[2];
+            const qwx = q[3] * q[0];
+            const qwy = q[3] * q[1];
+            const qwz = q[3] * q[2];
+
+            m[0][0] = 1 - 2 * (qyy + qzz);
+            m[0][1] = 2 * (qxy + qwz);
+            m[0][2] = 2 * (qxz - qwy);
+            m[1][0] = 2 * (qxy - qwz);
+            m[1][1] = 1 - 2 * (qxx + qzz);
+            m[1][2] = 2 * (qyz + qwx);
+            m[2][0] = 2 * (qxz + qwy);
+            m[2][1] = 2 * (qyz - qwx);
+            m[2][2] = 1 - 2 * (qxx + qyy);
+            return m;
+        }
+
+        pub fn fromMatrix(m: Mat3.Simd) Simd {
+            const fourXSquaredMinus1 = m[0][0] - m[1][1] - m[2][2];
+            const fourYSquaredMinus1 = m[1][1] - m[0][0] - m[2][2];
+            const fourZSquaredMinus1 = m[2][2] - m[0][0] - m[1][1];
+            const fourWSquaredMinus1 = m[0][0] + m[1][1] + m[2][2];
+
+            var biggestIndex: i32 = 0;
+            var fourBiggestSquaredMinus1 = fourWSquaredMinus1;
+            if (fourXSquaredMinus1 > fourBiggestSquaredMinus1) {
+                fourBiggestSquaredMinus1 = fourXSquaredMinus1;
+                biggestIndex = 1;
+            }
+            if (fourYSquaredMinus1 > fourBiggestSquaredMinus1) {
+                fourBiggestSquaredMinus1 = fourYSquaredMinus1;
+                biggestIndex = 2;
+            }
+            if (fourZSquaredMinus1 > fourBiggestSquaredMinus1) {
+                fourBiggestSquaredMinus1 = fourZSquaredMinus1;
+                biggestIndex = 3;
+            }
+
+            const biggestVal = @sqrt(fourBiggestSquaredMinus1 + 1) * 0.5;
+            const mult = 0.25 / biggestVal;
+
+            return switch (biggestIndex) {
+                0 => init((m[1][2] - m[2][1]) * mult, (m[2][0] - m[0][2]) * mult, (m[0][1] - m[1][0]) * mult, biggestVal),
+                1 => init(biggestVal, (m[0][1] + m[1][0]) * mult, (m[2][0] + m[0][2]) * mult, (m[1][2] - m[2][1]) * mult),
+                2 => init((m[0][1] + m[1][0]) * mult, biggestVal, (m[1][2] + m[2][1]) * mult, (m[2][0] - m[0][2]) * mult),
+                3 => init((m[2][0] + m[0][2]) * mult, (m[1][2] + m[2][1]) * mult, biggestVal, (m[0][1] - m[1][0]) * mult),
+                else => unreachable,
+            };
+        }
+
         pub fn equal(a: Simd, b: Simd, eps: T) bool {
             return Vec4.equal(a, b, eps);
         }
@@ -319,11 +377,16 @@ test "Quat" {
     const qt = qf.rotateVec(qa, v);
     const mt = m3f.mulMatVec(ma, v);
     try std.testing.expect(v3f.length(mt - qt) < 1e-6);
+    const mqa = qf.toMatrix(qa);
+    try std.testing.expect(m3f.equal(mqa, ma, 1e-6));
+    const qma = qf.fromMatrix(mqa);
+    try std.testing.expect(qf.equal(qma, qa, 1e-6));
 }
 
 pub fn Mat(comptime R: u32, comptime C: u32, comptime T: type) type {
     return struct {
         pub const Col = Vec(R, T);
+        pub const ColBool = Vec(R, bool);
         pub const Row = Vec(C, T);
         pub const RowBool = Vec(C, bool);
         pub const Elem = T;
@@ -390,7 +453,7 @@ pub fn Mat(comptime R: u32, comptime C: u32, comptime T: type) type {
         pub fn boolOp(comptime op: BoolOp, a: Simd, b: Simd) RowBool.Simd {
             var res: RowBool.Simd = undefined;
             inline for (0..C) |c| {
-                const rowRes: RowBool.Simd = switch (op) {
+                const colRes: ColBool.Simd = switch (op) {
                     .Equal => a[c] == b[c],
                     .NotEqual => a[c] != b[c],
                     .Less => a[c] < b[c],
@@ -398,9 +461,16 @@ pub fn Mat(comptime R: u32, comptime C: u32, comptime T: type) type {
                     .Greater => a[c] > b[c],
                     .GreaterOrEqual => a[c] >= b[c],
                 };
-                res[c] = RowBool.all(rowRes);
+                res[c] = ColBool.all(colRes);
             }
             return res;
+        }
+
+        pub fn equal(a: Simd, b: Simd, eps: T) bool {
+            inline for (0..C) |c|
+                if (!Col.equal(a[c], b[c], eps))
+                    return false;
+            return true;
         }
 
         pub fn mulMatVec(m: Simd, v: Row.Simd) Col.Simd {

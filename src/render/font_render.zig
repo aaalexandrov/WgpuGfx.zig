@@ -3,7 +3,7 @@ const wgpu = @import("wgpu");
 
 const wgfx = @import("wgfx.zig");
 const wgpuHandles = @import("handles.zig");
-const vm = @import("vec_math.zig");
+const vm = @import("../math/vec_math.zig");
 
 const Mat4 = vm.Mat(4, 4, f32);
 
