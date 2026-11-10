@@ -18,8 +18,8 @@ pub fn maxValue(comptime T: type) T {
 }
 
 pub fn angleToMat2(comptime T: type, angle: T) vm.Mat(2, 2, T).Simd {
-    const s = @sin(self.angle);
-    const c = @cos(self.angle);
+    const s = @sin(angle);
+    const c = @cos(angle);
     return .{
         .{c, -s},
         .{s, c}
