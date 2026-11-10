@@ -461,12 +461,10 @@ pub fn Mat(comptime R: u32, comptime C: u32, comptime T: type) type {
                 det *= pivot;
                 for (c + 1..C) |cn| {
                     const elem = Col.get(m[cn], c);
-                    if (std.math.approxEqAbs(T, elem, 0, Eps))
+                    if (elem == 0)
                         continue;
-                    const scale = -pivot / elem;
-                    m[cn] = m[cn] * @as(Col.Simd, @splat(scale)) + m[c];
-                    det *= scale;
-                    std.debug.assert(Col.get(m[cn], c) < 1e-5);
+                    // Subtracting a multiple of another column leaves the determinant unchanged
+                    m[cn] -= m[c] * @as(Col.Simd, @splat(elem / pivot));
                 }
             }
             return det;
@@ -600,6 +598,12 @@ test "Mat" {
 
     const bdet = m4f.determinant(b);
     try std.testing.expectEqual(std.math.pow(f32, 2, 4), bdet);
+
+    const m3f = Mat(3, 3, f32);
+    const c: m3f.Simd = .{ .{ 1, 2, 3 }, .{ 4, 5, 6 }, .{ 7, 8, 10 } };
+    try std.testing.expectApproxEqAbs(-3, m3f.determinant(c), 1e-5);
+    const m2f = Mat(2, 2, f32);
+    try std.testing.expectApproxEqAbs(1, m2f.determinant(.{ .{ 2, 1 }, .{ 1, 1 } }), 1e-6);
 
     const mat43f = Mat(4, 3, f32);
     const m: mat43f.Simd = .{

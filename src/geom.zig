@@ -487,21 +487,27 @@ pub fn Triangle(comptime N: u32, comptime T: type) type {
             const dotVP1 = Vec.dot(v0, p01);
             const dotVP2 = Vec.dot(v0, p02);
             const dotP12 = Vec.dot(p01, p02);
-            const invDenom = 1 / (dotP01 * dotP02 - dotP12 * dotP12);
+            const denom = dotP01 * dotP02 - dotP12 * dotP12;
+            const degenerateEps = 16 * std.math.floatEps(T) * dotP01 * dotP02;
             var bary: Vec3.Simd = undefined;
-            if (!std.math.isFinite(invDenom)) {
-                // degenerate triangle
-                const dirIsP01 = dotP01 > dotP02;
-                var param = if (dirIsP01) 
-                        dotVP1 / dotP01 
-                    else 
-                        dotVP2 / dotP02;
-                if (!std.math.isFinite(param)) 
-                    param = 0;
-                bary = Vec3.Simd{1 - param, 0, param};
-                if (dirIsP01)
-                    bary = Vec3.Simd{bary[0], bary[2], bary[1]};
+            if (!(denom > degenerateEps)) {
+                var minDist2 = std.math.inf(T);
+                bary = Vec3.Simd{1, 0, 0};
+                for (0..3) |ind| {
+                    const nextInd = nextIndex(@intCast(ind));
+                    const edge = Edge.fromPoints(triPoints.*[ind], triPoints.*[nextInd]);
+                    const t = @min(@max(0, edge.getProjectionParam(v)), 1);
+                    const dist2 = Vec.length2(edge.getPoint(t) - v);
+                    if (dist2 < minDist2) {
+                        var edgeBary = std.mem.zeroes(Vec3.Arr);
+                        edgeBary[ind] = 1 - t;
+                        edgeBary[nextInd] = t;
+                        bary = edgeBary;
+                        minDist2 = dist2;
+                    }
+                }
             } else {
+                const invDenom = 1 / denom;
                 const c1 = (dotP02 * dotVP1 - dotP12 * dotVP2) * invDenom;
                 const c2 = (dotP01 * dotVP2 - dotP12 * dotVP1) * invDenom;
                 bary = Vec3.Simd{1 - c1 - c2, c1, c2};
@@ -657,21 +663,30 @@ pub fn Pyramid(comptime N: u32, comptime T: type) type {
         }
 
         pub fn clampBaryFromPoints(pyrPoints: *const [4]Vec.Simd, p: Vec.Simd, bary: Vec4.Simd) Vec4.Simd {
-            // TODO: The case when exactly one barycentric is positive is wrong
-            // in that case the closest point can be on any one of the 3 triangles incident with the positive barycentric point
-            // This should be rewritten similar to the triangle case, switching on the number of negative bary coefficients
-            const minInd = Vec4.minElemIndex(bary);
-            if (Vec4.get(bary, minInd) >= 0)
+            const baryNegative = bary < Vec4.splat(0);
+            const numNegative = @reduce(.Add, @as(@Vector(4, i32), @intFromBool(baryNegative)));
+            if (numNegative == 0)
                 return bary;
-            const inds = unorientedTriangleIndices(minInd);
-            const tri: Tri = .{.points = .{pyrPoints.*[inds[0]], pyrPoints.*[inds[1]], pyrPoints.*[inds[2]]}};
-            const triBary = tri.barycentricCoords(p);
-            const triBaryClamped = tri.clampBary(p, triBary);
-            var baryClamped: Vec4.Arr = undefined;
-            baryClamped[minInd] = 0;
-            for (0..3) |i|
-                baryClamped[inds[i]] = Tri.Vec3.get(triBaryClamped, i);
-            return baryClamped;
+            var bestBary: Vec4.Simd = undefined;
+            var bestDist2 = std.math.inf(T);
+            for (0..4) |i| {
+                if (Vec4.get(bary, i) >= 0)
+                    continue;
+                const inds = unorientedTriangleIndices(@intCast(i));
+                const tri: Tri = .{.points = .{pyrPoints.*[inds[0]], pyrPoints.*[inds[1]], pyrPoints.*[inds[2]]}};
+                const triBary = tri.barycentricCoords(p);
+                const triBaryClamped = tri.clampBary(p, triBary);
+                const triDist2 = Vec.length2(tri.getPoint(triBaryClamped) - p);
+                if (triDist2 < bestDist2) {
+                    var pyrBary = std.mem.zeroes(Vec4.Arr);
+                    inline for (0..3) |ind|
+                        pyrBary[inds[ind]] = triBaryClamped[ind];
+                    bestBary = pyrBary;
+                    bestDist2 = triDist2;
+                }
+            }
+            std.debug.assert(std.math.isFinite(bestDist2));
+            return bestBary;
         }
 
         pub fn clampBary(self: *const Self, p: Vec.Simd, bary: Vec4.Simd) Vec4.Simd {
@@ -774,7 +789,7 @@ pub fn GJK(comptime N: u32, comptime T: type) type {
             var simplex: Simp = .{};
 
             const zero = Vec.splat(0);
-            const eps: T = 1e-5;
+            const relEps: T = 16 * std.math.floatEps(T);
 
             var minDotPP = maxValue(T);
             var numFailedToImprove: u32 = 0;
@@ -784,7 +799,10 @@ pub fn GJK(comptime N: u32, comptime T: type) type {
                 const pBary = simplex.closestPointBary(zero);
                 const p = simplex.getPoint(pBary);
                 const dotPP = Vec.dot(p, p);
-                if (dotPP < eps)
+                var maxVertLen2: T = 0;
+                for (simplex.vertices[0..simplex.numVertices]) |vert|
+                    maxVertLen2 = @max(maxVertLen2, Vec.length2(vert));
+                if (dotPP <= relEps * relEps * maxVertLen2)
                     return 0;
                 if (dotPP < minDotPP) {
                     minDotPP = dotPP;
@@ -800,7 +818,7 @@ pub fn GJK(comptime N: u32, comptime T: type) type {
                 v = va - vb;
                 const dotPV = Vec.dot(p, v);
                 const dotDiff = dotPP - dotPV;
-                const dotEps = eps * eps * dotPP;
+                const dotEps = relEps * dotPP;
                 if (dotDiff <= dotEps)
                     return @sqrt(dotPP);
             }
@@ -818,7 +836,7 @@ pub fn TestGJK() !void {
     const box2: Box3f = .{.min = Vec3f.splat(1), .max = Vec3f.splat(2)};
     const sphere: Sphere3f = .{.center = Vec3f.Simd{0, 0, 2}, .radius = 0.5};
     const dist = GJK3f.distance(Box3f, &box, Sphere3f, &sphere);
-    try std.testing.expectApproxEqAbs(0.5, dist, 1e-3);
+    try std.testing.expectApproxEqAbs(0.5, dist, 1e-5);
     const dist2 = GJK3f.distance(Box3f, &box, Box3f, &box2);
     try std.testing.expectEqual(0.0, dist2);
 }
