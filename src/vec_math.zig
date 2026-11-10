@@ -69,7 +69,7 @@ pub fn Vec(comptime N: u32, comptime T: type) type {
         pub fn maxElemIndex(v: Simd) u32 {
             var maxInd: u32 = 0;
             inline for (1..N) |i| {
-                if (v[i] > v[maxInd])
+                if (v[i] > get(v, maxInd))
                     maxInd = @intCast(i);
             }
             return maxInd;

@@ -500,7 +500,7 @@ pub fn Triangle(comptime N: u32, comptime T: type) type {
                     param = 0;
                 bary = Vec3.Simd{1 - param, 0, param};
                 if (dirIsP01)
-                    std.mem.swap(T, &bary[1], &bary[2]);
+                    bary = Vec3.Simd{bary[0], bary[2], bary[1]};
             } else {
                 const c1 = (dotP02 * dotVP1 - dotP12 * dotVP2) * invDenom;
                 const c2 = (dotP01 * dotVP2 - dotP12 * dotVP1) * invDenom;
@@ -535,7 +535,26 @@ pub fn Triangle(comptime N: u32, comptime T: type) type {
             const baryNegative = bary < Vec3.splat(0);
             const numNegative = @reduce(.Add, @as(@Vector(3, i32), @intFromBool(baryNegative)));
             return switch (numNegative) {
-                2 => @select(T, baryNegative, Vec3.splat(0), Vec3.splat(1)),
+                2 => double: {
+                    const posInd = Vec.maxElemIndex(bary);
+                    const prevInd = prevIndex(posInd);
+                    const nextInd = nextIndex(posInd);
+                    const edgePrev = Edge.fromPoints(triPoints.*[posInd], triPoints.*[prevInd]);
+                    const tPrev = @min(@max(0, edgePrev.getProjectionParam(p)), 1);
+                    const edgeNext = Edge.fromPoints(triPoints.*[posInd], triPoints.*[nextInd]);
+                    const tNext = @min(@max(0, edgeNext.getProjectionParam(p)), 1);
+                    var clamped: Vec3.Arr = undefined;
+                    if (tPrev > tNext) {
+                        clamped[posInd] = 1 - tPrev;
+                        clamped[prevInd] = tPrev;
+                        clamped[nextInd] = 0;
+                    } else {
+                        clamped[posInd] = 1 - tNext;
+                        clamped[nextInd] = tNext;
+                        clamped[prevInd] = 0;
+                    }
+                    break :double clamped;
+                },
                 1 => single: {
                     const negInd = Vec.minElemIndex(bary);
                     const prevInd = prevIndex(negInd);
@@ -610,7 +629,7 @@ pub fn Pyramid(comptime N: u32, comptime T: type) type {
                         var newBary: Vec4.Arr = undefined;
                         newBary[triInd] = 0;
                         for (0..3) |i|
-                            newBary[inds[i]] = Tri.Vec3.get(triBary, i);
+                            newBary[inds[i]] = Tri.Vec3.get(triClosestBary, i);
                         bary = newBary;
                         minDist = triDist;
                     }
@@ -638,6 +657,9 @@ pub fn Pyramid(comptime N: u32, comptime T: type) type {
         }
 
         pub fn clampBaryFromPoints(pyrPoints: *const [4]Vec.Simd, p: Vec.Simd, bary: Vec4.Simd) Vec4.Simd {
+            // TODO: The case when exactly one barycentric is positive is wrong
+            // in that case the closest point can be on any one of the 3 triangles incident with the positive barycentric point
+            // This should be rewritten similar to the triangle case, switching on the number of negative bary coefficients
             const minInd = Vec4.minElemIndex(bary);
             if (Vec4.get(bary, minInd) >= 0)
                 return bary;
