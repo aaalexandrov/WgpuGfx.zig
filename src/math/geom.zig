@@ -36,7 +36,7 @@ pub fn Rotation(comptime N: u32, comptime T: type) type {
             angle: T = 0,
 
             pub const Vec = vm.Vec(N, T);
-            pub const Mat2 = vm.Mat(N, N, T);
+            pub const Mat_ = vm.Mat(N, N, T);
             pub const Self = @This();
 
             pub fn inverse(self: Self) Self {
@@ -51,17 +51,17 @@ pub fn Rotation(comptime N: u32, comptime T: type) type {
                 };
             }
 
-            pub fn toMatrix(self: Self) Mat2.Simd {
+            pub fn toMatrix(self: Self) Mat_.Simd {
                 return angleToMat2(T, self.angle);
             }
 
-            pub fn fromMatrix(m: Mat2.Simd) Self {
+            pub fn fromMatrix(m: Mat_.Simd) Self {
                 return .{.angle = mat2ToAngle(T, m)};
             }
 
             pub fn rotateVec(self: Self, v: Vec) Vec.Simd {
                 const m = self.matrix();
-                return Mat2.mulMatVec(m, v);
+                return Mat_.mulMatVec(m, v);
             }
 
             pub fn equal(self: Self, rhs: Self, eps: T) bool {
@@ -73,6 +73,7 @@ pub fn Rotation(comptime N: u32, comptime T: type) type {
 
             pub const Quat = vm.Quat(T);
             pub const Vec = vm.Vec(N, T);
+            pub const Mat_ = vm.Mat(N, N, T);
             pub const Self = @This();
 
             pub fn inverse(self: Self) Self {
@@ -85,6 +86,14 @@ pub fn Rotation(comptime N: u32, comptime T: type) type {
                 return .{
                     .quat = Quat.mul(self.quat, rhs.quat),
                 };
+            }
+
+            pub fn toMatrix(self: Self) Mat_.Simd {
+                return self.quat.toMatrix();
+            }
+
+            pub fn fromMatrix(m: Mat_.Simd) Self {
+                return .{.quat = Quat.fromMatrix(m)};
             }
 
             pub fn rotateVec(self: Self, v: Vec.Simd) Vec.Simd {
@@ -106,7 +115,9 @@ pub fn Transform(comptime N: u32, comptime T: type) type {
         rotation: Rot = .{},
 
         pub const Vec = vm.Vec(N, T);
+        pub const Mat_ = vm.Mat(N + 1, N + 1, T);
         pub const Rot = Rotation(N, T);
+        pub const RotMat = Rot.Mat_;
         pub const Sphere_ = Sphere(N, T);
         pub const Box_ = Box(N, T);
         pub const OBox = OrientedBox(N, T);
@@ -164,6 +175,12 @@ pub fn Transform(comptime N: u32, comptime T: type) type {
                 .halfExtent = obox.halfExtent * Vec.splat(self.scale),
                 .rotation = self.rotation.compose(obox.rotation),
             };
+        }
+
+        pub fn toMatrix(self: *const Self) Mat_.Simd {
+            const scaledRot = RotMat.mulScalar(self.rotation.toMatrix(), self.scale);
+            const trans = Mat_.translate(N, self.position);
+            return Mat_.mul(N + 1, trans, RotMat.toDim(N + 1, N + 1, scaledRot, 1));
         }
 
         pub fn isEqual(self: *const Self, rhs: *const Self, eps: T) bool {

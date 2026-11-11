@@ -473,6 +473,13 @@ pub fn Mat(comptime R: u32, comptime C: u32, comptime T: type) type {
             return true;
         }
 
+        pub fn mulScalar(m: Simd, a: T) Simd {
+            var res: Simd = undefined;
+            inline for (0..C) |c|
+                res[c] = m[c] * @as(Col.Simd, @splat(a));
+            return res;
+        }
+
         pub fn mulMatVec(m: Simd, v: Row.Simd) Col.Simd {
             var res: Col.Simd = m[0] * @as(Col.Simd, @splat(v[0]));
             inline for (1..C) |c|

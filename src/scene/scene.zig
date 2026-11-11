@@ -23,10 +23,14 @@ pub const Camera = struct {
     proj: Mat4,
 
     const Self = @This();
-    pub fn getView(self: *const Self) Mat4 {
-        return self.transform.rotation
+
+    pub fn getView(self: *const Self) Mat4.Simd {
+        return Mat4.inverse(self.transform.toMatrix());
     }
 
+    pub fn getProj(self: *const Self) Mat4.Simd {
+        return self.proj;
+    }
 
 };
 
