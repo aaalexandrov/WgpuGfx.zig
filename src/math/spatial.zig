@@ -34,7 +34,7 @@ pub fn SpatialTree(comptime N: u32, T: type, D: type) type {
             self.nodes.clearAndFree(alloc);
         }
 
-        fn nodeIndexAndBox(self: *const Self, nodeBox: *const Box) struct { u32, Box } {
+        fn nodeIndex(self: *const Self, nodeBox: *const Box) u32 {
             std.debug.assert(!nodeBox.isEmpty());
             var curBox = self.box;
             var index: u32 = 1;
@@ -56,7 +56,7 @@ pub fn SpatialTree(comptime N: u32, T: type, D: type) type {
                 index = (index << N) | childIdx;
                 curBox = childBox;
             }
-            return .{index, curBox};
+            return index;
         }
 
         fn nodeBoxFromIndex(self: *const Self, nodeIdx: u32) Box {
@@ -85,21 +85,11 @@ pub fn SpatialTree(comptime N: u32, T: type, D: type) type {
             return curBox;
         }
 
-        pub const NodeData = struct {
-            node: *Node,
-            box: Box,
-        };
-
-        pub fn getNode(self: *const Self, dataBox: *const Box) ?NodeData {
-            const nodeInd, const nodeBox = self.nodeIndexAndBox(dataBox);
-            return .{
-                .node = self.nodes.get(nodeInd) orelse return null,
-                .box = nodeBox,
-            };
+        pub fn getNode(self: *const Self, nodeInd: u32) ?*Node {
+            return self.nodes.get(nodeInd) orelse return null;
         }
 
-        pub fn getOrAddNode(self: Self, dataBox: *const Box, initData: *const Data, alloc: std.mem.Allocator) !NodeData {
-            const nodeInd, const nodeBox = self.nodeIndexAndBox(dataBox);
+        pub fn getOrAddNode(self: Self, nodeInd: u32, initData: *const Data, alloc: std.mem.Allocator) !*Node {
             std.debug.assert(nodeInd > 0);
             var entry = try self.nodes.getOrPut(alloc, nodeInd);
             const node = entry.value_ptr;
@@ -115,11 +105,22 @@ pub fn SpatialTree(comptime N: u32, T: type, D: type) type {
                     break;
                 entry = try self.nodes.getOrPut(alloc, parentInd);
             }
-            return .{
-                .node = node,
-                .box = nodeBox,
-            };
+            return node;
         }   
+
+        pub const NodeCallback = fn (context: anyopaque, node: *Node, nodeBox: *const Box) bool;
+        pub fn forIntersectingNodes(self: *const Self, box: *const Box, context: anyopaque, callback: NodeCallback) bool {
+            var itNodes = self.iterator();
+            while (itNodes.next()) |nodeWithBox| {
+                if (!box.intersects(&nodeWithBox.box)) {
+                    itNodes.skipNodeAndChildren();
+                    continue;
+                }
+                if (!callback(context, nodeWithBox.node, &nodeWithBox.box))
+                    return false;
+            }
+            return true;
+        }
 
         pub fn iterator(self: *const Self) Iterator {
             return .{
@@ -131,7 +132,7 @@ pub fn SpatialTree(comptime N: u32, T: type, D: type) type {
             spatial: *const Self,
             nodeIdx: u32 = 1,
 
-            pub fn next(self: *const Iterator) ?NodeData {
+            pub fn next(self: *const Iterator) ?struct {node: *Node, box: Box} {
                 const node = self.spatial.nodes.getPtr(self.nodeIdx) orelse return null;
                 const nodeIdx = self.nodeIdx;
                 self.advanceNode(node);
@@ -248,16 +249,18 @@ pub fn GeomTree(comptime N: u32, comptime T: type) type {
 
         pub fn addGeom(self: *Self, geom: GeomP) !void {
             const geomBox = geom.getBox();
-            const nodeData = try self.spatial.getOrAddNode(geomBox, &GeomArr.empty, self.alloc);
-            std.debug.assert(std.mem.find(GeomP, nodeData.node.data.items, .{geom}) == null);
-            try nodeData.node.data.append(self.alloc, geom);
+            const nodeInd = self.spatial.nodeIndex(&geomBox);
+            const node = try self.spatial.getOrAddNode(nodeInd, &GeomArr.empty, self.alloc);
+            std.debug.assert(std.mem.find(GeomP, node.data.items, .{geom}) == null);
+            try node.data.append(self.alloc, geom);
         }
 
         pub fn removeGeom(self: *Self, geom: GeomP) void {
             const geomBox = geom.getBox();
-            const nodeData = try self.spatial.getNode(geomBox) orelse return;
-            const geomIdx = std.mem.find(GeomP, nodeData.node.data.items, .{geom}) orelse return;
-            _ = nodeData.node.data.swapRemove(geomIdx);
+            const nodeInd = self.spatial.nodeIndex(&geomBox);
+            const node = try self.spatial.getNode(nodeInd) orelse return;
+            const geomIdx = std.mem.find(GeomP, node.data.items, .{geom}) orelse return;
+            _ = node.data.swapRemove(geomIdx);
         }
 
         pub const GeomCallback = fn (context: anyopaque, geom: GeomP) void;
